@@ -3442,6 +3442,7 @@ class MainWindow(QMainWindow):
                             "fecha_vencimiento": d.get("fecha_vencimiento", ""),
                             "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
                             "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
+                            "presentaciones": prod.get("presentaciones"),
                         })
 
             if not productos_lote:

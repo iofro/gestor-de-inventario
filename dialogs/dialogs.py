@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout, QToolButton, QScrollArea,
+    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout, QScrollArea,
     QStyledItemDelegate, QStyleOptionViewItem, QLayout
 )
 from PyQt5.QtCore import (
@@ -1498,22 +1498,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         pago_layout.addWidget(self.credit_fields_widget)
 
-        remision_layout = QGridLayout()
-        remision_layout.setContentsMargins(0, 0, 0, 0)
-        remision_layout.setHorizontalSpacing(8)
-        remision_layout.setVerticalSpacing(4)
-        remision_layout.addWidget(QLabel("No. Remisión:"), 0, 0)
-        remision_layout.addWidget(QLabel("Orden No.:"), 0, 1)
-        self.no_remision_edit = QLineEdit()
-        self.no_remision_edit.setPlaceholderText("Número de remisión")
-        remision_layout.addWidget(self.no_remision_edit, 1, 0)
-        self.orden_no_edit = QLineEdit()
-        self.orden_no_edit.setPlaceholderText("Número de orden")
-        remision_layout.addWidget(self.orden_no_edit, 1, 1)
-        remision_layout.setColumnStretch(0, 1)
-        remision_layout.setColumnStretch(1, 1)
-        pago_layout.addLayout(remision_layout)
-
         pago_layout.addStretch(1)
 
         right_layout.addWidget(datos_card)
@@ -2517,14 +2501,12 @@ class ProductDialog(QDialog):
         header2.setProperty("class", "sectionHeader")
         layout.addWidget(header2)
 
-        self.presentaciones_table = QTableWidget(3, 6)
+        self.presentaciones_table = QTableWidget(0, 4)
         self.presentaciones_table.setHorizontalHeaderLabels([
             "Nombre Presentación",
             "Factor (Unidades Base)",
             "Precio Compra Presentación",
             "Precio Venta Presentación",
-            "",
-            "",
         ])
         self.presentaciones_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.presentaciones_table.verticalHeader().setVisible(False)
@@ -2597,19 +2579,6 @@ class ProductDialog(QDialog):
             self.presentaciones_table.setItem(r, 1, QTableWidgetItem(str(factor)))
             self.presentaciones_table.setItem(r, 2, QTableWidgetItem(f"${float(pc):.2f}"))
             self.presentaciones_table.setItem(r, 3, QTableWidgetItem(f"${float(pv):.2f}"))
-
-            edit_btn = QToolButton()
-            edit_btn.setText("✏")
-            edit_btn.setStyleSheet("color: #0d6efd; font-size: 16px;")
-            edit_btn.clicked.connect(lambda _, idx=r: self._editar_presentacion(idx))
-
-            delete_btn = QToolButton()
-            delete_btn.setText("🗑")
-            delete_btn.setStyleSheet("color: #d92d20; font-size: 16px;")
-            delete_btn.clicked.connect(lambda _, idx=r: self._eliminar_presentacion(idx))
-
-            self.presentaciones_table.setCellWidget(r, 4, edit_btn)
-            self.presentaciones_table.setCellWidget(r, 5, delete_btn)
 
     def _agregar_presentacion(self):
         dialog = PresentacionDialog(self)
@@ -3095,6 +3064,7 @@ class RegisterPurchaseDialog(QDialog):
         self.product_search_edit.textChanged.connect(self._filtrar_lista_productos)
         self.product_list.currentRowChanged.connect(self._actualizar_vendedor_y_Distribuidor)
         self.product_list.currentRowChanged.connect(self._actualizar_presentacion_combo)
+        self.combo_presentacion.currentIndexChanged.connect(self._actualizar_precio_unitario_por_producto)
         self.vendedor_combo.currentIndexChanged.connect(self._mark_vendor_user_selected)
         self.vendedor_combo.currentIndexChanged.connect(self._actualizar_Distribuidor)
         self.vendedor_combo.currentIndexChanged.connect(self._update_summary_vendor_info)
@@ -3311,7 +3281,9 @@ class RegisterPurchaseDialog(QDialog):
                             f"{nombre_raw} (x{factor:g})" if nombre_raw else f"Presentación x{factor:g}"
                         )
                         self.combo_presentacion.addItem(opcion_texto, factor)
+                        self.combo_presentacion.setItemData(self.combo_presentacion.count() - 1, pres, Qt.UserRole + 1)
             self.combo_presentacion.setCurrentIndex(0)
+        self._actualizar_precio_unitario_por_producto()
 
     # --- NUEVO MÉTODO ---
     def _actualizar_precio_unitario_por_producto(self):
@@ -3320,9 +3292,29 @@ class RegisterPurchaseDialog(QDialog):
         if not prod:
             self.precio_unitario_spin.setValue(0)
             return
-        precio = prod.get("precio_compra", 0)
+        pres_data = self.combo_presentacion.itemData(self.combo_presentacion.currentIndex(), Qt.UserRole + 1)
+        factor_raw = self.combo_presentacion.currentData()
+        try:
+            factor = float(factor_raw)
+        except Exception:
+            factor = 1.0
+        if factor <= 0:
+            factor = 1.0
+        precio = None
+        if isinstance(pres_data, Mapping):
+            precio = pres_data.get("precio_compra")
+        if precio in (None, ""):
+            precio_base = prod.get("precio_compra", 0) or 0
+            try:
+                precio = float(precio_base) * factor
+            except Exception:
+                precio = 0
+        try:
+            precio_val = float(precio)
+        except Exception:
+            precio_val = 0.0
         self.precio_unitario_spin.blockSignals(True)
-        self.precio_unitario_spin.setValue(float(precio))
+        self.precio_unitario_spin.setValue(precio_val)
         self.precio_unitario_spin.blockSignals(False)
         self._calcular_preview_item()
 

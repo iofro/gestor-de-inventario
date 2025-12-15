@@ -298,9 +298,17 @@ class SalesTab(QWidget):
         left_layout.setContentsMargins(16, 16, 16, 16)
         left_layout.setSpacing(12)
 
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
         title_left = QLabel("Historial de Ventas")
         title_left.setFont(_adjust_font(title_left.font(), delta=3, bold=True))
-        left_layout.addWidget(title_left)
+        title_row.addWidget(title_left)
+        title_row.addStretch(1)
+        self.refresh_sales_btn = QPushButton("Recargar")
+        self.refresh_sales_btn.setCursor(Qt.PointingHandCursor)
+        self.refresh_sales_btn.clicked.connect(self._refresh_sales_data)
+        title_row.addWidget(self.refresh_sales_btn)
+        left_layout.addLayout(title_row)
 
         filters_layout = QVBoxLayout()
         filters_layout.setSpacing(8)
@@ -350,7 +358,7 @@ class SalesTab(QWidget):
         ])
         self.sales_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.sales_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.sales_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.sales_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.sales_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.sales_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.sales_table.setFrameShape(QFrame.NoFrame)
@@ -383,6 +391,10 @@ class SalesTab(QWidget):
         self.btn_guardar_dte_manual.setMinimumHeight(34)
         self.btn_guardar_dte_manual.clicked.connect(self._guardar_dte_manual)
         actions_row.addWidget(self.btn_guardar_dte_manual)
+        self.btn_editar_dte = QPushButton("Editar DTE rechazado")
+        self.btn_editar_dte.setMinimumHeight(34)
+        self.btn_editar_dte.clicked.connect(self._editar_dte_rechazado)
+        actions_row.addWidget(self.btn_editar_dte)
         self.btn_eliminar_venta = QPushButton("Eliminar venta y restaurar inventario")
         self.btn_eliminar_venta.setObjectName("DangerActionButton")
         self.btn_eliminar_venta.setMinimumHeight(34)
@@ -572,6 +584,18 @@ class SalesTab(QWidget):
             self.widget_cf.set_productos_data(productos_lote)
         if hasattr(self, "widget_cfiscal"):
             self.widget_cfiscal.set_productos_data(productos_lote)
+
+    def reset_pos_after_sale(self):
+        """Limpia formularios POS y vuelve al selector inicial."""
+        try:
+            if hasattr(self, "widget_cf") and hasattr(self.widget_cf, "clear_carrito"):
+                self.widget_cf.clear_carrito()
+            if hasattr(self, "widget_cfiscal") and hasattr(self.widget_cfiscal, "clear_carrito"):
+                self.widget_cfiscal.clear_carrito()
+            if hasattr(self, "pos_stack"):
+                self.pos_stack.setCurrentIndex(0)
+        except Exception:
+            logger.debug("No se pudo resetear POS tras venta", exc_info=True)
 
     def _on_cf_venta_validada(self, data: dict):
         """Recibe la venta CF validada y delega al flujo principal."""
@@ -1183,6 +1207,82 @@ class SalesTab(QWidget):
             self.date_to.setEnabled(True)
         self.load_sales()
 
+    def _refresh_sales_data(self):
+        """Recarga ventas y catálogos desde DB bajo demanda."""
+        try:
+            self.manager.refresh_data()
+        except Exception:
+            logger.exception("No se pudo refrescar datos de ventas")
+        self.load_sales()
+
+    def _confirm_editar_dte(self) -> bool:
+        warn = QMessageBox(self)
+        warn.setIcon(QMessageBox.Warning)
+        warn.setWindowTitle("ADVERTENCIA")
+        warn.setText(
+            "Este NO es un error del sistema. Hacienda rechazó el DTE por datos erróneos."
+        )
+        warn.setInformativeText("¿Deseas editar el DTE y reintentar el envío?")
+        warn.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        warn.setDefaultButton(QMessageBox.No)
+        if warn.exec_() != QMessageBox.Yes:
+            return False
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Warning)
+        confirm.setWindowTitle("Proceder con cuidado")
+        confirm.setText(
+            "Ciertos cambios pueden traer problemas con Hacienda o contabilidad."
+        )
+        confirm.setInformativeText(
+            "Proceda solo si está seguro. Vertex no se hace responsable por manipulaciones erróneas en los DTE."
+        )
+        confirm.setStandardButtons(QMessageBox.No)
+        btn_continuar = confirm.addButton("Continuar", QMessageBox.YesRole)
+        btn_regresar = confirm.addButton("Regresar", QMessageBox.NoRole)
+        confirm.setDefaultButton(btn_regresar)
+        confirm.exec_()
+        return confirm.clickedButton() is btn_continuar
+
+    def _editar_dte_rechazado(self):
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Editar DTE", "Seleccione una venta del historial.")
+            return
+        row = self.sales_table.currentRow()
+        venta_id = self._venta_id_from_row(row)
+        if venta_id is None:
+            QMessageBox.warning(self, "Editar DTE", "No se pudo identificar la venta seleccionada.")
+            return
+        if not self._confirm_editar_dte():
+            return
+        tipo_dte = "01"
+        json_path = None
+        try:
+            venta = self.manager.db.get_venta_by_id(venta_id)
+            if venta:
+                extra = venta.get("extra")
+                if isinstance(extra, str):
+                    try:
+                        extra = json.loads(extra)
+                    except Exception:
+                        extra = None
+                if isinstance(extra, dict):
+                    json_path = extra.get("dteJsonPath") or extra.get("jsonPath") or extra.get("path")
+                    tipo_dte = extra.get("tipoDte") or tipo_dte
+        except Exception:
+            venta = None
+        if not json_path:
+            QMessageBox.warning(self, "Editar DTE", "No se encontró el JSON del DTE asociado a la venta.")
+            return
+        try:
+            main_window = self.window()
+            if hasattr(main_window, "_editar_dte_receptor_y_reenviar"):
+                main_window._editar_dte_receptor_y_reenviar(venta_id, str(tipo_dte), str(json_path))
+            else:
+                QMessageBox.warning(self, "Editar DTE", "No se pudo abrir el editor de DTE en esta ventana.")
+        except Exception as exc:
+            logger.exception("No se pudo abrir el editor de DTE para venta %s", venta_id)
+            QMessageBox.critical(self, "Editar DTE", f"No se pudo abrir el editor: {exc}")
+
     def load_sales(self):
         ventas = self.manager.db.get_ventas(sincronizada=1)
         search = self.search_bar.text().lower()
@@ -1524,45 +1624,55 @@ class SalesTab(QWidget):
         self.load_sales()
 
     def _eliminar_venta_y_restaurar(self):
-        if self.sales_table.currentRow() < 0:
-            QMessageBox.warning(self, "Eliminar venta", "Seleccione una venta del historial.")
+        selected_indexes = self.sales_table.selectionModel().selectedRows()
+        if not selected_indexes:
+            QMessageBox.warning(self, "Eliminar venta", "Seleccione una o más ventas del historial.")
             return
-        row = self.sales_table.currentRow()
-        venta_id = self._venta_id_from_row(row)
-        if venta_id is None:
-            QMessageBox.warning(self, "Eliminar venta", "No se pudo identificar la venta seleccionada.")
+        venta_ids = []
+        for idx in selected_indexes:
+            vid = self._venta_id_from_row(idx.row())
+            if vid is not None:
+                venta_ids.append(int(vid))
+        if not venta_ids:
+            QMessageBox.warning(self, "Eliminar venta", "No se pudo identificar las ventas seleccionadas.")
             return
         confirm = QMessageBox.question(
             self,
             "Eliminar venta",
-            "¿Eliminar la venta y restaurar el inventario? Esto eliminará los registros DTE asociados.",
+            "¿Eliminar las ventas seleccionadas y restaurar el inventario? Esto eliminará los registros DTE asociados.",
             QMessageBox.Yes | QMessageBox.No,
         )
         if confirm != QMessageBox.Yes:
             return
-        ok = False
-        try:
-            ok = self.manager.db.delete_venta(venta_id)
-        except Exception as exc:
-            logger.exception("No se pudo eliminar la venta %s", venta_id)
-            QMessageBox.critical(self, "Eliminar venta", f"No se pudo eliminar la venta: {exc}")
-            return
-        if ok:
+        eliminadas = 0
+        errores = []
+        for vid in venta_ids:
+            try:
+                ok = self.manager.db.delete_venta(vid)
+            except Exception as exc:
+                logger.exception("No se pudo eliminar la venta %s", vid)
+                errores.append(str(vid))
+                continue
+            if ok:
+                eliminadas += 1
+            else:
+                errores.append(str(vid))
+        if eliminadas:
             try:
                 self.manager.refresh_data()
                 self.load_sales()
             except Exception:
                 logger.exception("Error al refrescar tras eliminar venta")
-            QMessageBox.information(
-                self,
-                "Venta eliminada",
-                "La venta se eliminó y el inventario fue restaurado al estado previo.",
-            )
-        else:
+        if eliminadas:
+            mensaje = f"{eliminadas} venta(s) eliminada(s) y el inventario fue restaurado."
+            if errores:
+                mensaje += f"\nNo se eliminaron: {', '.join(errores)}"
+            QMessageBox.information(self, "Venta eliminada", mensaje)
+        elif errores:
             QMessageBox.warning(
                 self,
                 "Eliminar venta",
-                "No se pudo eliminar la venta. Verifique los registros e intente nuevamente.",
+                "No se pudo eliminar las ventas seleccionadas. Verifique los registros e intente nuevamente.",
             )
 
     def _get_ventas_dte_estado(self):

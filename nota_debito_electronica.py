@@ -84,7 +84,7 @@ def _search_dui(data: object) -> str | None:
     return None
 
 
-STRICT_SNAPSHOT_DEFAULT = env_flag("STRICT_SNAPSHOT", default=True)
+STRICT_SNAPSHOT_DEFAULT = env_flag("STRICT_SNAPSHOT", default=False)
 USAR_FALLBACK_JSON_DEFAULT = env_flag("USAR_FALLBACK_JSON", default=True)
 
 Decimal_0 = Decimal("0")
@@ -424,17 +424,27 @@ def generar_nde_desde_nota(
     rel = doc_rel[0] if doc_rel else {}
     duration_ms = (time.perf_counter() - start) * 1000
     metrics.inc(f"notes_source_used.{source_used}")
-    if (
-        fecha_origen
-        and rel.get("fechaEmision")
-        and rel.get("fechaEmision") != fecha_origen
-    ):
-        logger.warning(
-            "documentoRelacionado.fechaEmision: valor no verificable localmente nota_id=%s venta_id=%s uuid=%s",
-            nota_id,
-            venta_id,
-            uuid_origen,
-        )
+    if fecha_origen and rel.get("fechaEmision"):
+        try:
+            fecha_rel_iso = fecha_iso(rel.get("fechaEmision"))
+            fecha_ori_iso = fecha_iso(fecha_origen)
+        except Exception:
+            fecha_rel_iso = rel.get("fechaEmision")
+            fecha_ori_iso = fecha_origen
+        if fecha_rel_iso and fecha_ori_iso and fecha_rel_iso != fecha_ori_iso:
+            logger.warning(
+                "documentoRelacionado.fechaEmision: valor no verificable localmente nota_id=%s venta_id=%s uuid=%s",
+                nota_id,
+                venta_id,
+                uuid_origen,
+            )
+            logger.debug(
+                "fecha origen (iso)=%s rel=%s raw_origen=%s raw_rel=%s",
+                fecha_ori_iso,
+                fecha_rel_iso,
+                fecha_origen,
+                rel.get("fechaEmision"),
+            )
     logger.info(
         "NDE relaciona tipo=%s uuid=%s num=%s fec=%s fuente=%s nota_id=%s venta_id=%s dur_ms=%.3f",
         rel.get("tipoDocumento"),

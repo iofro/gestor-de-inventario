@@ -708,11 +708,12 @@ def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     try:
         base_path = Path(base_dir)
-        files = list(base_path.glob("*.json"))
+        files = sorted(base_path.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     except Exception:
         files = []
 
     cur = getattr(db, "cursor", None)
+    seen_keys: set[str] = set()
 
     for fpath in files:
         try:
@@ -739,6 +740,11 @@ def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
         codigo_generacion = ident.get("codigoGeneracion") or ident.get("codigo_generacion")
         fecha_emision = ident.get("fecEmi") or ident.get("fechaEmision") or ident.get("fecha")
         hora_emision = ident.get("horEmi") or ident.get("horaEmision") or ident.get("hora")
+        dedupe_key = str(codigo_generacion or numero_control or compra_id or fpath.stem)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+
         parsed_date = None
         fecha_str = ""
         if fecha_emision:
@@ -778,12 +784,16 @@ def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
                 env_row = None
             envio_estado = _map_row_estado(env_row)
 
+        pdf_path = fpath.with_suffix(".pdf")
+        pdf_resolved = resolve_user_visible_path(str(pdf_path)) if pdf_path.exists() else None
+        name_value = numero_control or codigo_generacion or f"FSE-{compra_id or fpath.stem}"
+
         rows.append(
             {
                 "row_type": "orphan",
                 "id": compra_id,
                 "venta_id": None,
-                "name": "suj exclu",
+                "name": name_value,
                 "numero_control": numero_control,
                 "codigo_generacion": codigo_generacion,
                 "fecha": fecha_str,
@@ -797,6 +807,7 @@ def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
                 "tipo": "Factura sujeto excluido",
                 "codigo": "14",
                 "json": resolve_user_visible_path(str(fpath)),
+                "pdf": pdf_resolved,
                 "sign": 1,
             }
         )

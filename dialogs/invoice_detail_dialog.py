@@ -46,6 +46,7 @@ _DOC_TYPE_BY_CODE = {
     "04": ("NotaRemision", True),
     "05": ("NotaCredito", True),
     "06": ("NotaDebito", True),
+    "14": ("SujetoExcluido", True),
 }
 
 _DOC_CODE_BY_DESC = {
@@ -58,6 +59,9 @@ _DOC_CODE_BY_DESC = {
     "nota de crédito": "05",
     "nota de debito": "06",
     "nota de débito": "06",
+    "factura sujeto excluido": "14",
+    "sujeto excluido": "14",
+    "fse": "14",
 }
 
 _FIELD_LABEL_OVERRIDES = {
@@ -362,7 +366,7 @@ class InvoiceDetailDialog(QDialog):
 
     def _build_metadata_tab(self) -> QWidget | None:
         tipo_codigo = self._resolve_document_code()
-        if tipo_codigo not in {"01", "03", "04", "05", "06"}:
+        if tipo_codigo not in {"01", "03", "04", "05", "06", "14"}:
             return None
         factura = self.factura or {}
         if not isinstance(factura, Mapping):

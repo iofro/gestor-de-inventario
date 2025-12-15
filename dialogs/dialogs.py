@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout, QScrollArea,
+    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout, QScrollArea, QPlainTextEdit,
     QStyledItemDelegate, QStyleOptionViewItem, QLayout
 )
 from PyQt5.QtCore import (
@@ -1642,9 +1642,14 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         precio = 0
         if prod:
             base = get_field(prod, "precio_venta_minorista", 0)
-            precio = pres_data.get("precio_venta", None)
-            if precio in (None, ""):
-                precio = base * factor
+            pres_price = pres_data.get("precio_venta", None)
+            if pres_price not in (None, ""):
+                try:
+                    precio = float(pres_price) / factor if factor else float(pres_price)
+                except Exception:
+                    precio = base
+            else:
+                precio = base
         self.precio_spin.blockSignals(True)
         self.precio_total_spin.blockSignals(True)
         self.precio_spin.setValue(float(precio))
@@ -1662,6 +1667,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self._on_presentacion_changed()
 
     def _on_presentacion_changed(self):
+        factor = self._presentacion_factor_from_combo(self.presentacion_combo)
+        try:
+            self.cantidad_spin.blockSignals(True)
+            self.cantidad_spin.setValue(int(factor) if factor > 0 else 1)
+        finally:
+            self.cantidad_spin.blockSignals(False)
         self._actualizar_precio_defecto()
 
     def _actualizar_presentacion_combo(self):
@@ -1986,8 +1997,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         # Precios siempre editables y sincronizados
         self._recalcular_totales()
-        precio_presentacion = self.precio_spin.value()
-        precio_total = self.precio_total_spin.value()
+        precio_unit_base = self.precio_spin.value()
+        precio_presentacion = precio_unit_base * max(factor, 1)
+        precio_total = precio_presentacion * cantidad_bultos
 
         factor = self._presentacion_factor_from_combo(self.presentacion_combo)
         pres_nombre = (self.presentacion_combo.currentText() or "").strip()
@@ -2095,9 +2107,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
             cant_bultos = item.get("cantidad_bultos", item.get("cantidad", 0))
             pres_nombre = item.get("presentacion_nombre", "")
-            cantidad_texto = f"{cant_bultos} {pres_nombre}".strip()
+            cantidad_base = item.get("cantidad", cant_bultos)
+            cantidad_texto = f"{int(cantidad_base) if float(cantidad_base).is_integer() else cantidad_base} unidades"
             cantidad_item = QTableWidgetItem(cantidad_texto)
-            cantidad_item.setData(Qt.UserRole, item.get("cantidad", cant_bultos))
+            cantidad_item.setData(Qt.UserRole, cantidad_base)
             self.table.setItem(i, 1, cantidad_item)
 
             precio_pres = item.get("precio_presentacion")
@@ -2383,7 +2396,7 @@ class ProductDialog(QDialog):
         self.precio_compra_spin = QDoubleSpinBox()
         self.precio_compra_spin.setMaximum(1000000)
         self.precio_compra_spin.setDecimals(8)
-        self.precio_compra_spin.setSingleStep(0.00000001)
+        self.precio_compra_spin.setSingleStep(1)
         self.precio_venta_minorista_spin = QDoubleSpinBox()
         self.precio_venta_minorista_spin.setMaximum(1000000)
         self.precio_venta_minorista_spin.setDecimals(2)
@@ -2501,14 +2514,16 @@ class ProductDialog(QDialog):
         header2.setProperty("class", "sectionHeader")
         layout.addWidget(header2)
 
-        self.presentaciones_table = QTableWidget(0, 4)
+        self.presentaciones_table = QTableWidget(0, 5)
         self.presentaciones_table.setHorizontalHeaderLabels([
             "Nombre Presentación",
             "Factor (Unidades Base)",
             "Precio Compra Presentación",
             "Precio Venta Presentación",
+            "Acciones",
         ])
         self.presentaciones_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.presentaciones_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.presentaciones_table.verticalHeader().setVisible(False)
         self.presentaciones_table.setAlternatingRowColors(True)
         self.presentaciones_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -2579,6 +2594,18 @@ class ProductDialog(QDialog):
             self.presentaciones_table.setItem(r, 1, QTableWidgetItem(str(factor)))
             self.presentaciones_table.setItem(r, 2, QTableWidgetItem(f"${float(pc):.2f}"))
             self.presentaciones_table.setItem(r, 3, QTableWidgetItem(f"${float(pv):.2f}"))
+            actions = QWidget()
+            layout = QHBoxLayout(actions)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(6)
+            btn_edit = QPushButton("Editar")
+            btn_delete = QPushButton("Eliminar")
+            btn_edit.clicked.connect(lambda _=None, idx=r: self._editar_presentacion(idx))
+            btn_delete.clicked.connect(lambda _=None, idx=r: self._eliminar_presentacion(idx))
+            layout.addWidget(btn_edit)
+            layout.addWidget(btn_delete)
+            layout.addStretch(1)
+            self.presentaciones_table.setCellWidget(r, 4, actions)
 
     def _agregar_presentacion(self):
         dialog = PresentacionDialog(self)
@@ -2631,6 +2658,7 @@ class PresentacionDialog(QDialog):
         self.factor_spin.setRange(0.0001, 1_000_000)
         self.factor_spin.setDecimals(4)
         self.factor_spin.setSingleStep(1)
+        self.factor_spin.setValue(1.0)
         self.precio_compra_spin = QDoubleSpinBox()
         self.precio_compra_spin.setRange(0, 1_000_000)
         self.precio_compra_spin.setDecimals(4)
@@ -2781,12 +2809,12 @@ class RegisterPurchaseDialog(QDialog):
         self.precio_unitario_spin.setMinimum(0)
         self.precio_unitario_spin.setMaximum(1000000)
         self.precio_unitario_spin.setDecimals(8)
-        self.precio_unitario_spin.setSingleStep(0.00000001)
+        self.precio_unitario_spin.setSingleStep(1)
         self.precio_total_spin = QDoubleSpinBox()
         self.precio_total_spin.setMinimum(0)
         self.precio_total_spin.setMaximum(100000000)
         self.precio_total_spin.setDecimals(8)
-        self.precio_total_spin.setSingleStep(0.00000001)
+        self.precio_total_spin.setSingleStep(1)
         self.fecha_vencimiento_edit = QDateEdit(QDate.currentDate())
         self.fecha_vencimiento_edit.setCalendarPopup(True)
         self.codigo_lote_edit = QLineEdit()
@@ -3303,14 +3331,24 @@ class RegisterPurchaseDialog(QDialog):
         precio = None
         if isinstance(pres_data, Mapping):
             precio = pres_data.get("precio_compra")
+        precio_base = prod.get("precio_compra", 0) or 0
+        try:
+            precio_base_val = float(precio_base)
+        except Exception:
+            precio_base_val = 0.0
         if precio in (None, ""):
-            precio_base = prod.get("precio_compra", 0) or 0
             try:
-                precio = float(precio_base) * factor
+                precio = float(precio_base_val) * factor
             except Exception:
                 precio = 0
         try:
             precio_val = float(precio)
+        except Exception:
+            precio_val = 0.0
+        if precio_val <= 0 and precio_base_val > 0:
+            precio_val = precio_base_val * factor
+        try:
+            precio_val = float(precio_val)
         except Exception:
             precio_val = 0.0
         self.precio_unitario_spin.blockSignals(True)
@@ -3516,8 +3554,29 @@ class RegisterPurchaseDialog(QDialog):
             producto_id = detalle.get("producto_id")
             producto_info = self._productos_por_id.get(producto_id, {})
             nombre_producto = producto_info.get("nombre") or f"Producto {producto_id}" if producto_id is not None else ""
-            cantidad = detalle.get("cantidad", 0) or 0
-            precio = detalle.get("precio_unitario", 0) or 0
+            factor_raw = detalle.get("presentacion_factor")
+            try:
+                factor_val = float(factor_raw)
+            except Exception:
+                factor_val = 1.0
+            if factor_val <= 0:
+                factor_val = 1.0
+            cantidad_base = detalle.get("cantidad", 0) or 0
+            cantidad_pres = detalle.get("cantidad_presentacion")
+            if cantidad_pres is None and factor_val:
+                try:
+                    cantidad_pres = float(cantidad_base) / factor_val
+                except Exception:
+                    cantidad_pres = None
+            cantidad = cantidad_pres if cantidad_pres is not None else cantidad_base
+            precio_base = detalle.get("precio_unitario", 0) or 0
+            precio_pres = detalle.get("precio_presentacion")
+            if precio_pres is None and factor_val:
+                try:
+                    precio_pres = float(precio_base) * factor_val
+                except Exception:
+                    precio_pres = precio_base
+            precio = precio_pres if precio_pres is not None else precio_base
             subtotal = detalle.get("subtotal")
             if subtotal is None:
                 subtotal = cantidad * precio
@@ -3545,11 +3604,13 @@ class RegisterPurchaseDialog(QDialog):
                     "producto_display": nombre_producto,
                     "producto_id": producto_id,
                     "cantidad": cantidad,
-                    "cantidad_base": cantidad,
-                    "presentacion_factor": 1,
-                    "presentacion_nombre": "Unidad Base (x1)",
+                    "cantidad_base": cantidad_base,
+                    "cantidad_presentacion": cantidad,
+                    "presentacion_factor": factor_val,
+                    "presentacion_nombre": detalle.get("presentacion_nombre", "Unidad Base (x1)"),
                     "precio": precio,
-                    "precio_unitario_base": precio,
+                    "precio_presentacion": precio,
+                    "precio_unitario_base": precio_base,
                     "subtotal": subtotal,
                     "descuento_valor": descuento_valor,
                     "descuento_pct": (descuento_monto / subtotal * 100) if subtotal else 0,
@@ -3761,10 +3822,12 @@ class RegisterPurchaseDialog(QDialog):
             "producto_display": producto_display,
             "producto_id": producto_id,
             "cantidad": cantidad,
+            "cantidad_presentacion": cantidad,
             "cantidad_base": cantidad_base,
             "presentacion_factor": factor,
             "presentacion_nombre": presentacion_nombre,
             "precio": precio,
+            "precio_presentacion": precio,
             "precio_unitario_base": precio_unitario_base,
             "subtotal": subtotal,
             "descuento_valor": descuento_valor,
@@ -3996,11 +4059,11 @@ class RegisterPurchaseDialog(QDialog):
                 factor_val = 1.0
             if factor_val <= 0:
                 factor_val = 1.0
-            cantidad_bultos = item.get("cantidad", 0)
+            cantidad_pres = item.get("cantidad_presentacion", item.get("cantidad", 0))
             cantidad_base = item.get("cantidad_base")
             if cantidad_base is None:
-                cantidad_base = cantidad_bultos * factor_val
-            precio_presentacion = item.get("precio", 0)
+                cantidad_base = (cantidad_pres or 0) * factor_val
+            precio_presentacion = item.get("precio_presentacion", item.get("precio", 0))
             precio_base = item.get("precio_unitario_base")
             if precio_base is None:
                 precio_base = precio_presentacion / factor_val if factor_val else precio_presentacion
@@ -4013,8 +4076,10 @@ class RegisterPurchaseDialog(QDialog):
                 detalle = dict(item)
                 detalle["cantidad"] = cantidad_base
                 detalle["cantidad_base"] = cantidad_base
+                detalle["cantidad_presentacion"] = item.get("cantidad_presentacion", item.get("cantidad"))
                 detalle["precio"] = precio_base
                 detalle["precio_unitario_base"] = precio_base
+                detalle.setdefault("precio_presentacion", item.get("precio_presentacion", item.get("precio")))
                 detalles_para_guardar.append(detalle)
             self.parent().manager.db.update_compra_detallada(
                 self._compra_id,
@@ -4068,6 +4133,10 @@ class RegisterPurchaseDialog(QDialog):
                 item.get("comision_tipo", ""),
                 codigo_lote=item.get("codigo_lote", ""),
                 registro_sanitario=item.get("registro_sanitario", ""),
+                cantidad_presentacion=item.get("cantidad_presentacion", item.get("cantidad")),
+                presentacion_factor=item.get("presentacion_factor"),
+                presentacion_nombre=item.get("presentacion_nombre"),
+                precio_presentacion=item.get("precio_presentacion", item.get("precio")),
             )
             self.parent().manager.aumentar_stock(producto_id, cantidad_base)
 
@@ -5971,6 +6040,8 @@ class VentaDetalleDialog(QDialog):
     def __init__(self, venta, detalles, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Detalle de Venta")
+        self.resize(960, 720)
+        self.setMinimumSize(820, 600)
         layout = QVBoxLayout()
 
         vendedores = []
@@ -6453,6 +6524,31 @@ class CompraDetalleDialog(QDialog):
             )
         layout.addLayout(info_grid)
 
+        fse_json_path = self._find_fse_json_path(compra)
+        if fse_json_path:
+            toggle_btn = QPushButton("Ver DTE sujeto excluido (JSON)")
+            toggle_btn.setCheckable(True)
+            layout.addWidget(toggle_btn, alignment=Qt.AlignLeft)
+
+            json_view = QPlainTextEdit()
+            json_view.setReadOnly(True)
+            json_view.setLineWrapMode(QPlainTextEdit.NoWrap)
+            try:
+                with open(fse_json_path, "r", encoding="utf-8") as fh:
+                    json_view.setPlainText(fh.read())
+            except Exception as exc:
+                json_view.setPlainText(f"No se pudo leer el JSON ({exc})")
+            json_view.hide()
+            layout.addWidget(json_view)
+
+            def _toggle_json(checked: bool) -> None:
+                json_view.setVisible(checked)
+                toggle_btn.setText(
+                    "Ocultar DTE sujeto excluido" if checked else "Ver DTE sujeto excluido (JSON)"
+                )
+
+            toggle_btn.toggled.connect(_toggle_json)
+
         headers = [
             "Producto",
             "Cantidad",
@@ -6617,6 +6713,38 @@ class CompraDetalleDialog(QDialog):
             if not pixmap.isNull():
                 return pixmap
         return None
+
+    @staticmethod
+    def _find_fse_json_path(compra: Mapping[str, Any]) -> Path | None:
+        """Busca el JSON del DTE de sujeto excluido para esta compra."""
+
+        try:
+            compra_id = normalize_identifier(compra.get("id"))
+        except Exception:
+            compra_id = None
+        if compra_id is None:
+            return None
+        try:
+            base_dir = Path(ensure_user_dir("dtes_sujeto_excluido"))
+        except Exception:
+            return None
+
+        candidates: list[Path] = []
+        try:
+            pattern = f"fse_compra_{compra_id}_*.json"
+            candidates = list(base_dir.glob(pattern))
+            if not candidates:
+                candidates = [p for p in base_dir.glob("*.json") if f"_{compra_id}" in p.name]
+        except Exception:
+            return None
+
+        if not candidates:
+            return None
+        try:
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        except Exception:
+            pass
+        return candidates[0] if candidates else None
 
 class LogoPreviewDialog(QDialog):
     """Permite seleccionar y previsualizar el logo del negocio."""
@@ -7026,6 +7154,7 @@ class DTECorrelativoConfigDialog(QDialog):
         "05": "Nota de crédito",
         "06": "Nota de débito",
         "07": "Comprobante de retención",
+        "14": "Factura sujeto excluido",
     }
 
     def __init__(self, db=None, prefijo="DTE-01-S001P001", parent=None):
@@ -7033,6 +7162,7 @@ class DTECorrelativoConfigDialog(QDialog):
         self.db = db or DB()
         self.prefijo = prefijo
         self.setWindowTitle("Configuración de correlativo")
+        self.resize(720, 520)
 
         layout = QVBoxLayout(self)
         self.correlativos_table = QTableWidget(0, 3)
@@ -7074,7 +7204,7 @@ class DTECorrelativoConfigDialog(QDialog):
         self.correlativos_table.setRowCount(0)
         self._correlativo_spins = {}
         self._original_correlativos = {}
-        for tipo in ["01", "03", "04", "05", "06", "07"]:
+        for tipo in ["01", "03", "04", "05", "06", "07", "14"]:
             row = self.correlativos_table.rowCount()
             self.correlativos_table.insertRow(row)
             tipo_desc = self._TIPO_DTE_DESC.get(tipo, tipo)
@@ -8254,13 +8384,22 @@ class UserEditDialog(QDialog):
         self.username_edit = QLineEdit(username)
         self.password_edit = QLineEdit(password)
         self.password_edit.setEchoMode(QLineEdit.Password)
+        toggle_btn = QPushButton("👁")
+        toggle_btn.setCheckable(True)
+        toggle_btn.setFixedWidth(32)
+        toggle_btn.clicked.connect(self._toggle_password_visibility)
+        pwd_row = QHBoxLayout()
+        pwd_row.setContentsMargins(0, 0, 0, 0)
+        pwd_row.setSpacing(6)
+        pwd_row.addWidget(self.password_edit)
+        pwd_row.addWidget(toggle_btn)
         self.role_combo = QComboBox()
         self.role_combo.addItems(["guest", "user", "admin"])
         idx = self.role_combo.findText(role)
         if idx >= 0:
             self.role_combo.setCurrentIndex(idx)
         form.addRow("Usuario:", self.username_edit)
-        form.addRow("Contraseña:", self.password_edit)
+        form.addRow("Contraseña:", pwd_row)
         form.addRow("Rol:", self.role_combo)
         layout.addLayout(form)
         btns = QHBoxLayout()
@@ -8271,6 +8410,9 @@ class UserEditDialog(QDialog):
         btns.addWidget(ok_btn)
         btns.addWidget(cancel_btn)
         layout.addLayout(btns)
+
+    def _toggle_password_visibility(self, checked: bool):
+        self.password_edit.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
 
     def get_data(self):
         return (

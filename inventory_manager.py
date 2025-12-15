@@ -1023,6 +1023,7 @@ class InventoryManager:
                     p.get("precio_venta_mayorista", 0),
                     stock,
                     commit=False,
+                    presentaciones=p.get("presentaciones"),
                 )
                 new_id = self.db.cursor.lastrowid  # Usa el ID real insertado, no busques por nombre
                 producto_id_map[p["id"]] = new_id
@@ -1349,6 +1350,7 @@ class InventoryManager:
                             producto_info.get("precio_venta_mayorista", 0),
                             stock,
                             commit=False,
+                            presentaciones=producto_info.get("presentaciones"),
                         )
                         producto_id = self.db.cursor.lastrowid
                         producto_id_map[old_producto_id] = producto_id

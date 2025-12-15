@@ -114,7 +114,7 @@ class NotaDetalleDialog(QDialog):
 
             qty_spin = QDoubleSpinBox()
             qty_spin.setDecimals(4)
-            qty_spin.setSingleStep(0.0001)
+            qty_spin.setSingleStep(1)
             if self.tipo == "credito":
                 max_qty = float(qty) if qty else 0.0
             else:
@@ -128,7 +128,7 @@ class NotaDetalleDialog(QDialog):
 
             monto_spin = QDoubleSpinBox()
             monto_spin.setDecimals(4)
-            monto_spin.setSingleStep(0.0001)
+            monto_spin.setSingleStep(1)
             if self.tipo == "credito":
                 monto_spin.setPrefix("-")
             monto_spin.setRange(0, 1_000_000)

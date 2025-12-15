@@ -255,8 +255,23 @@ def _compute_detalles(db, compra: dict, detalles: list[dict]) -> tuple[list[dict
 
     for idx, det in enumerate(detalles, start=1):
         prod = _get_product(db, det.get("producto_id"))
-        qty = _decimal(det.get("cantidad"))
-        precio = _decimal(det.get("precio_unitario") or det.get("precio") or det.get("precio_unitario_ref"))
+        factor = _decimal(det.get("presentacion_factor") or 1)
+        if factor <= 0:
+            factor = Decimal("1")
+        qty_pres = det.get("cantidad_presentacion")
+        qty_base = _decimal(det.get("cantidad"))
+        if qty_pres is not None:
+            try:
+                qty_pres_dec = _decimal(qty_pres)
+                qty_base = qty_pres_dec * factor
+            except Exception:
+                pass
+        qty = qty_base
+        precio_pres = _decimal(det.get("precio_presentacion") or 0)
+        precio_base = _decimal(det.get("precio_unitario") or det.get("precio") or det.get("precio_unitario_ref"))
+        if precio_pres and factor:
+            precio_base = precio_pres / factor
+        precio = precio_base
         subtotal = qty * precio
         descuento_valor = _decimal(det.get("descuento"))
         descuento_tipo = (det.get("descuento_tipo") or "%").strip()

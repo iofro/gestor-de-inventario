@@ -33,12 +33,15 @@ def iniciar_firmador() -> subprocess.Popen:
     java_bin = java_home / "bin" / "java.exe"
     jar = base / "target" / "svfe-api-firmador-0.1.1.jar"
 
-    msg = (
-        f"FIRMADOR.START: cwd={os.getcwd()} base={base} java={java_bin} "
-        f"exists_java={java_bin.exists()} jar={jar} exists_jar={jar.exists()}"
+    logger.info(
+        "Firmador start cwd=%s base=%s java=%s exists_java=%s jar=%s exists_jar=%s",
+        os.getcwd(),
+        base,
+        java_bin,
+        java_bin.exists(),
+        jar,
+        jar.exists(),
     )
-    logger.info(msg)
-    print(msg)
 
     if not java_bin.exists():
         raise FileNotFoundError(f"No se encontró Java en {java_bin}")

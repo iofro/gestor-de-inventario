@@ -17,6 +17,7 @@ _CANONICAL_DTE_SUBDIRS = {
     "NotaRemision": "notas_remision",
     "NotaCredito": "notas_credito",
     "NotaDebito": "notas_debito",
+    "SujetoExcluido": "dtes_sujeto_excluido",
 }
 
 _DTE_CODE_TO_DOC = {
@@ -25,6 +26,7 @@ _DTE_CODE_TO_DOC = {
     "04": "NotaRemision",
     "05": "NotaCredito",
     "06": "NotaDebito",
+    "14": "SujetoExcluido",
 }
 
 APP_NAME = "VertexDTE"

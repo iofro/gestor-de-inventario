@@ -19,6 +19,48 @@ except Exception:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
+def _escape_pdf_text(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _write_stub_pdf(dest: Path, *, titulo: str, lineas: list[str]) -> None:
+    """Crea un PDF mínimo (1 página) para acompañar el JSON FSE."""
+
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        contenido = f"BT /F1 12 Tf 72 720 Td ({_escape_pdf_text(titulo)}) Tj "
+        for linea in lineas:
+            contenido += f"0 -14 Td ({_escape_pdf_text(linea)}) Tj "
+        contenido += "ET\n"
+        content_bytes = contenido.encode("latin-1", "ignore")
+
+        header = b"%PDF-1.4\n"
+        objects = [
+            b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
+            b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
+            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n",
+            b"4 0 obj << /Length " + str(len(content_bytes)).encode("ascii") + b" >> stream\n" + content_bytes + b"endstream endobj\n",
+            b"5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
+        ]
+        offsets = [0]
+        current = len(header)
+        for obj in objects:
+            offsets.append(current)
+            current += len(obj)
+        body = header + b"".join(objects)
+
+        xref_pos = len(body)
+        xref = f"xref\n0 {len(offsets)}\n0000000000 65535 f \n".encode("ascii")
+        for off in offsets[1:]:
+            xref += f"{off:010d} 00000 n \n".encode("ascii")
+        trailer = b"trailer << /Size " + str(len(offsets)).encode("ascii") + b" /Root 1 0 R >>\nstartxref\n" + str(xref_pos).encode("ascii") + b"\n%%EOF"
+
+        with open(dest, "wb") as fh:
+            fh.write(body + xref + trailer)
+    except Exception:
+        logger.exception("No se pudo generar PDF stub para %s", dest)
+
+
 def on_subject_excluded_purchase(
     compra_id: int,
     status: str | None = None,
@@ -67,6 +109,19 @@ def on_subject_excluded_purchase(
                 out_path = Path(output_dir) / filename
                 with open(out_path, "w", encoding="utf-8") as fh:
                     json.dump(fse, fh, ensure_ascii=False, indent=2)
+                # Genera un PDF de referencia con datos clave si no existe uno con el mismo nombre.
+                pdf_path = out_path.with_suffix(".pdf")
+                ident = fse.get("identificacion", {}) if isinstance(fse, dict) else {}
+                numero_control = ident.get("numeroControl") or ""
+                fecha_emi = ident.get("fecEmi") or ""
+                if not pdf_path.exists():
+                    lineas = [
+                        f"Compra ID: {compra_id}",
+                        f"Codigo generacion: {cg or 'N/D'}",
+                        f"Numero control: {numero_control or 'N/D'}",
+                        f"Fecha emision: {fecha_emi or 'N/D'}",
+                    ]
+                    _write_stub_pdf(pdf_path, titulo="Factura sujeto excluido", lineas=lineas)
                 logger.info("FSE guardado en %s", out_path)
             except Exception:
                 logger.exception("No se pudo guardar el FSE en disco para la compra %s", compra_id)

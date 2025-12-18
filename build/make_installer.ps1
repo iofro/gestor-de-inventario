@@ -101,7 +101,7 @@ if (-not (Test-Path -LiteralPath $issPath -PathType Leaf)) {
 $innoArgs = @($issPath)
 if (-not $NoDefines) {
     $innoArgs += "/DAppVersion=$AppVersion"
-    $innoArgs += '/DBuildOutputDir="installer\build\installer"'
+    $innoArgs += '/DBuildOutputDir="build\installer"'
 }
 
 Write-Host 'Compilando instalador con Inno Setup...'

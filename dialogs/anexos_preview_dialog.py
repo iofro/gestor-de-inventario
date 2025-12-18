@@ -35,6 +35,7 @@ from declaracion.dte_provider import (
     PreviewExclusionEntry,
     PreviewRow,
 )
+from utils.facturacion_records import short_tipo_label
 
 
 def _periodo_bounds(periodo: str) -> tuple[date, date]:
@@ -262,7 +263,8 @@ class AnexoPreviewTab(QWidget):
                 widget.deleteLater()
 
         for tipo, conteo in self._data.conteos_por_tipo.items():
-            texto = f"{tipo}: {conteo.get('incluidos', 0)} incluidos / {conteo.get('excluidos', 0)} excluidos"
+            tipo_display = short_tipo_label(tipo) or tipo
+            texto = f"{tipo_display}: {conteo.get('incluidos', 0)} incluidos / {conteo.get('excluidos', 0)} excluidos"
             etiqueta = QLabel(texto, self)
             etiqueta.setStyleSheet(
                 "border: 1px solid #ccc; border-radius: 12px; padding: 4px 8px; background: #f5f5f5;"
@@ -403,8 +405,9 @@ class AnexosPreviewDialog(QDialog):
             "Por tipo:",
         ]
         for tipo, conteo in data.conteos_por_tipo.items():
+            tipo_display = short_tipo_label(tipo) or tipo
             lineas.append(
-                f"  {tipo}: {conteo.get('incluidos', 0)} incluidos / {conteo.get('excluidos', 0)} excluidos"
+                f"  {tipo_display}: {conteo.get('incluidos', 0)} incluidos / {conteo.get('excluidos', 0)} excluidos"
             )
         lineas.append("Motivos:")
         for motivo in EXCLUSION_MOTIVOS:

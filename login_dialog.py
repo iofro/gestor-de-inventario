@@ -28,6 +28,10 @@ class LoginDialog(QDialog):
 
         self._build_ui()
         self._apply_styles()
+        try:
+            self.password_input.setFocus()
+        except Exception:
+            pass
 
     def _build_ui(self) -> None:
         main_layout = QVBoxLayout(self)

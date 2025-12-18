@@ -139,12 +139,16 @@ def _parse_presentaciones(raw_presentaciones: Any) -> list[dict[str, Any]]:
     if not raw_presentaciones:
         return []
     if isinstance(raw_presentaciones, list):
-        return [dict(item) for item in raw_presentaciones if isinstance(item, Mapping)]
+        parsed = [dict(item) for item in raw_presentaciones if isinstance(item, Mapping)]
+        logger.debug("Parsed presentaciones from list len=%s", len(parsed))
+        return parsed
     if isinstance(raw_presentaciones, str):
         try:
             data = json.loads(raw_presentaciones)
             if isinstance(data, list):
-                return [dict(item) for item in data if isinstance(item, Mapping)]
+                parsed = [dict(item) for item in data if isinstance(item, Mapping)]
+                logger.debug("Parsed presentaciones from JSON len=%s", len(parsed))
+                return parsed
         except Exception:
             return []
     return []
@@ -186,9 +190,14 @@ class CommitAwareConnection(sqlite3.Connection):
 class DB:
     def __init__(self, db_name: str | Path | None = None):
         if db_name is None:
-            db_path = user_data_path("inventario.db")
+            cwd_path = Path.cwd() / "inventario.db"
+            db_path = cwd_path if cwd_path.exists() else user_data_path("inventario.db")
         else:
             db_path = Path(db_name)
+        try:
+            logger.debug("DB init path=%s (exists=%s)", db_path, db_path.exists())
+        except Exception:
+            pass
         self.is_memory_db = str(db_path) == ":memory:"
         if not self.is_memory_db:
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -712,6 +721,12 @@ class DB:
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE SET NULL
             )
         """)
+        # Columnas nuevas en versiones recientes: asegurar para bases antiguas
+        self.ensure_column("productos", "sku", "TEXT")
+        self.ensure_column("productos", "precio_venta_minorista", "REAL DEFAULT 0")
+        self.ensure_column("productos", "precio_venta_mayorista", "REAL DEFAULT 0")
+        self.ensure_column("productos", "precio_total_mayorista", "REAL DEFAULT 0")
+        self.ensure_column("productos", "presentaciones", "TEXT")
         self.cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_productos_vendedor_id ON productos(vendedor_id)"
         )
@@ -835,6 +850,10 @@ class DB:
         """)
         self.ensure_column("compras", "is_subject_excluded_purchase", "INTEGER DEFAULT 0")
         self.ensure_column("compras", "subject_excluded_dte_status", "TEXT DEFAULT 'NO_APLICA'")
+        self.ensure_column("detalles_compra", "cantidad_presentacion", "REAL")
+        self.ensure_column("detalles_compra", "presentacion_factor", "REAL")
+        self.ensure_column("detalles_compra", "presentacion_nombre", "TEXT")
+        self.ensure_column("detalles_compra", "precio_presentacion", "REAL")
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS detalles_compra (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -969,6 +988,83 @@ class DB:
             )
             """
         )
+
+        def _migrate_dte_envios_drop_fk() -> None:
+            """Recrea dte_envios si aún tiene FK a ventas (impide notas)."""
+            try:
+                fk_rows = self.cursor.execute(
+                    "PRAGMA foreign_key_list(dte_envios)"
+                ).fetchall()
+            except Exception:
+                return
+            has_fk = any(row[2] == "ventas" for row in fk_rows) if fk_rows else False
+            if not has_fk:
+                return
+            logger.info("Migrando dte_envios para eliminar FK hacia ventas")
+            try:
+                cols_info = self.cursor.execute("PRAGMA table_info(dte_envios)").fetchall()
+                existing_cols = {row[1] for row in cols_info}
+                all_cols = [
+                    "id",
+                    "venta_id",
+                    "modo",
+                    "estado",
+                    "sello",
+                    "fecha_hora",
+                    "respuesta",
+                    "codigo_lote",
+                    "codigo_generacion",
+                    "numero_control",
+                    "ambiente",
+                    "estado_ui",
+                    "estado_ui_tag",
+                    "estado_ui_manual",
+                    "estado_dte_manual",
+                    "estado_dte_override",
+                ]
+                select_exprs = [
+                    col if col in existing_cols else f"NULL AS {col}" for col in all_cols
+                ]
+                self.cursor.execute("ALTER TABLE dte_envios RENAME TO dte_envios_old")
+                self.cursor.execute(
+                    """
+                    CREATE TABLE dte_envios (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        venta_id INTEGER,
+                        modo TEXT,
+                        estado TEXT,
+                        sello TEXT,
+                        fecha_hora TEXT,
+                        respuesta TEXT,
+                        codigo_lote TEXT,
+                        codigo_generacion TEXT,
+                        numero_control TEXT,
+                        ambiente TEXT,
+                        estado_ui TEXT,
+                        estado_ui_tag TEXT,
+                        estado_ui_manual INTEGER DEFAULT 0,
+                        estado_dte_manual TEXT,
+                        estado_dte_override INTEGER DEFAULT 0
+                    )
+                    """
+                )
+                self.cursor.execute(
+                    f"""
+                    INSERT INTO dte_envios ({", ".join(all_cols)})
+                    SELECT {", ".join(select_exprs)} FROM dte_envios_old
+                    """
+                )
+                self.cursor.execute("DROP TABLE dte_envios_old")
+                self.conn.commit()
+                logger.info("Migración dte_envios completada sin FK")
+            except Exception:
+                logger.exception("No se pudo migrar dte_envios para remover FK")
+                try:
+                    self.cursor.execute("DROP TABLE IF EXISTS dte_envios_old")
+                except Exception:
+                    pass
+
+        _migrate_dte_envios_drop_fk()
         # Migrar columnas adicionales para compatibilidad con versiones anteriores.
         self.ensure_column("dte_envios", "codigo_lote", "TEXT")
         self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
@@ -1335,6 +1431,15 @@ class DB:
         """
 
         # Elimina fecha_vencimiento del método y de la consulta
+        self.ensure_column("productos", "presentaciones", "TEXT")
+        try:
+            pres_len = len(presentaciones) if isinstance(presentaciones, list) else 0 if presentaciones else 0
+            logger.debug("add_producto nombre=%s codigo=%s pres_len=%s", nombre, codigo, pres_len)
+            self.cursor.execute("PRAGMA table_info(productos)")
+            cols = [row[1] for row in self.cursor.fetchall()]
+            logger.debug("productos columnas=%s", cols)
+        except Exception:
+            logger.debug("add_producto log fallo", exc_info=True)
         sku = _normalize_sku_value(sku)
         if isinstance(codigo, str):
             codigo = codigo.strip()
@@ -1360,6 +1465,13 @@ class DB:
         offset=0,
     ):
         """Retrieve products with optional pagination."""
+        self.ensure_column("productos", "presentaciones", "TEXT")
+        try:
+            self.cursor.execute("PRAGMA table_info(productos)")
+            cols = [row[1] for row in self.cursor.fetchall()]
+            logger.debug("get_productos columnas=%s", cols)
+        except Exception as exc:
+            logger.debug("get_productos no pudo leer columnas: %s", exc)
         query = "SELECT * FROM productos"
         params = []
         filtros = []
@@ -1381,17 +1493,51 @@ class DB:
         results = []
         for row in self.cursor.fetchall():
             data = dict(row)
+            data["presentaciones_raw"] = data.get("presentaciones")
             data["presentaciones"] = _parse_presentaciones(data.get("presentaciones"))
+            try:
+                logger.debug(
+                    "get_productos id=%s pres_len=%s raw_presentaciones_type=%s raw_value=%s",
+                    data.get("id"),
+                    len(data.get("presentaciones") or []),
+                    type(data.get("presentaciones_raw")),
+                    data.get("presentaciones_raw"),
+                )
+            except Exception:
+                logger.debug("get_productos log fallo", exc_info=True)
             results.append(data)
         return results
 
     def edit_producto(self, producto_id, nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, presentaciones=None):
         # Elimina fecha_vencimiento del método y de la consulta
+        self.ensure_column("productos", "presentaciones", "TEXT")
+        try:
+            pres_len = len(presentaciones) if isinstance(presentaciones, list) else 0 if presentaciones else 0
+            logger.debug(
+                "edit_producto id=%s nombre=%s codigo=%s pres_len=%s",
+                producto_id,
+                nombre,
+                codigo,
+                pres_len,
+            )
+            self.cursor.execute("PRAGMA table_info(productos)")
+            cols = [row[1] for row in self.cursor.fetchall()]
+            logger.debug("productos columnas=%s", cols)
+        except Exception:
+            logger.debug("edit_producto log fallo", exc_info=True)
         sku = _normalize_sku_value(sku)
         if isinstance(codigo, str):
             codigo = codigo.strip()
+        if presentaciones is None:
+            try:
+                self.cursor.execute("SELECT presentaciones FROM productos WHERE id=?", (producto_id,))
+                row = self.cursor.fetchone()
+                existing_raw = row[0] if row else None
+                presentaciones = json.loads(existing_raw) if isinstance(existing_raw, str) else existing_raw
+            except Exception:
+                presentaciones = None
         presentaciones_json = None
-        if presentaciones:
+        if presentaciones is not None:
             try:
                 presentaciones_json = json.dumps(presentaciones, ensure_ascii=False)
             except Exception:
@@ -3350,6 +3496,10 @@ class DB:
                     detalle.get("comision_tipo", ""),
                     codigo_lote=detalle.get("codigo_lote", ""),
                     registro_sanitario=detalle.get("registro_sanitario", ""),
+                    cantidad_presentacion=detalle.get("cantidad_presentacion"),
+                    presentacion_factor=detalle.get("presentacion_factor"),
+                    presentacion_nombre=detalle.get("presentacion_nombre"),
+                    precio_presentacion=detalle.get("precio_presentacion"),
                     commit=False,
                 )
                 if producto_id:
@@ -3376,16 +3526,26 @@ class DB:
         comision_tipo="",
         codigo_lote="",
         registro_sanitario="",
+        cantidad_presentacion=None,
+        presentacion_factor=None,
+        presentacion_nombre=None,
+        precio_presentacion=None,
         commit: bool = True,
     ):
+        self.ensure_column("detalles_compra", "cantidad_presentacion", "REAL")
+        self.ensure_column("detalles_compra", "presentacion_factor", "REAL")
+        self.ensure_column("detalles_compra", "presentacion_nombre", "TEXT")
+        self.ensure_column("detalles_compra", "precio_presentacion", "REAL")
         self.cursor.execute("""
             INSERT INTO detalles_compra (
                 compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento,
-                codigo_lote, registro_sanitario, descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                codigo_lote, registro_sanitario, descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo,
+                cantidad_presentacion, presentacion_factor, presentacion_nombre, precio_presentacion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento,
-            codigo_lote, registro_sanitario, descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo
+            codigo_lote, registro_sanitario, descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo,
+            cantidad_presentacion, presentacion_factor, presentacion_nombre, precio_presentacion
         ))
         if commit:
             self.conn.commit()

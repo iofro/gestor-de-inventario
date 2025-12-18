@@ -26,6 +26,7 @@ _CANONICAL_TYPES = {
     "NotaDebito": "NotaDebito",
     "NotaCredito": "NotaCredito",
     "NotaRemision": "NotaRemision",
+    "SujetoExcluido": "SujetoExcluido",
 }
 
 TEMPLATE_PATH = resource_path('formato_factura.json')

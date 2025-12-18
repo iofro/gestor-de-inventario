@@ -49,7 +49,7 @@ Name: "{autodesktop}\Vertex DTE"; Filename: "{app}\InventarioFarmacia.exe"; Work
 const
   NL = #13#10;
   APP_ID = '{7ACDE88C-3C97-47F0-A0F1-8BFC734E7373}';
-  PARALLEL_INSTALL_HINT = 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalaciÃ³n existente.';
+  PARALLEL_INSTALL_HINT = 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalacion existente.';
 
 function ReadPrevDirFromKey(RootKey: Integer; const SubKey, ValueName: string; var OutDir: string): Boolean;
 begin
@@ -108,6 +108,62 @@ var
   IsUpgrade: Boolean;
   PrevDirInitialized: Boolean;
   DefaultInstallDir: string;
+  ShouldBackup: Boolean;
+  BackupTarget: string;
+
+function CopyDirRecursive(const Source, Dest: string): Boolean;
+var
+  FindRec: TFindRec;
+  SrcPath, DestPath: string;
+begin
+  Result := False;
+  if not DirExists(Source) then
+    Exit;
+  if not ForceDirectories(Dest) then
+    Exit;
+
+  if FindFirst(Source + '\*', FindRec) then
+  begin
+    try
+      repeat
+        if (FindRec.Name = '.') or (FindRec.Name = '..') then
+          Continue;
+
+        SrcPath := Source + '\' + FindRec.Name;
+        DestPath := Dest + '\' + FindRec.Name;
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+        begin
+          if not CopyDirRecursive(SrcPath, DestPath) then
+            Exit;
+        end
+        else
+        begin
+          if not FileCopy(SrcPath, DestPath, False) then
+            Exit;
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+
+  Result := True;
+end;
+
+function MakeUniqueDir(const BasePath: string): string;
+var
+  Candidate: string;
+  Suffix: Integer;
+begin
+  Candidate := BasePath;
+  Suffix := 1;
+  while DirExists(Candidate) do
+  begin
+    Candidate := BasePath + '_' + IntToStr(Suffix);
+    Suffix := Suffix + 1;
+  end;
+  Result := Candidate;
+end;
 
 procedure EnsurePrevDirInitialized;
 begin
@@ -179,7 +235,7 @@ begin
 
   if HasValidPrevDir then
   begin
-    Response := MsgBox('Se detectÃ³ una instalaciÃ³n existente en: ' + PrevDir + NL + 'Â¿Desea actualizar?', mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
+    Response := MsgBox('Se detecto una instalacion existente en: ' + PrevDir + NL + 'Desea actualizar?', mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
     if Response = IDYES then
     begin
       WizardForm.DirEdit.Text := PrevDir;
@@ -187,6 +243,10 @@ begin
       WizardForm.DirBrowseButton.Enabled := False;
       RequireDifferentDir := False;
       IsUpgrade := True;
+      ShouldBackup := MsgBox(
+        'Desea crear una copia de seguridad en el escritorio antes de actualizar?',
+        mbConfirmation, MB_YESNO or MB_DEFBUTTON2
+      ) = IDYES;
     end
     else
     begin
@@ -215,5 +275,21 @@ begin
   begin
     MsgBox(PARALLEL_INSTALL_HINT, mbInformation, MB_OK);
     Result := False;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  DesktopBase: string;
+begin
+  if (CurStep = ssInstall) and IsUpgrade and ShouldBackup and DirExists(PrevDir) then
+  begin
+    DesktopBase := ExpandConstant('{userdesktop}\Vertex DTE Backup');
+    BackupTarget := MakeUniqueDir(DesktopBase);
+    Log(Format('Creando copia de seguridad desde %s hacia %s', [PrevDir, BackupTarget]));
+    if CopyDirRecursive(PrevDir, BackupTarget) then
+      Log(Format('Copia de seguridad creada en: %s', [BackupTarget]))
+    else
+      MsgBox('No se pudo crear la copia de seguridad en: ' + BackupTarget, mbError, MB_OK);
   end;
 end;

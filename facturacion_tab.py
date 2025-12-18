@@ -123,6 +123,8 @@ from utils.facturacion_records import (
     CANONICAL_TIPO_LABELS,
     TIPO_DTE_DESC,
     TIPO_DTE_CODE_BY_DESC,
+    TIPO_DTE_SHORT_DESC,
+    short_tipo_label,
     detectar_estado_factura,
     format_envio_state,
     get_facturacion_rows,
@@ -189,25 +191,6 @@ DOC_PATTERN = re.compile(r"^\d{8}_.+_(ConsumidorFinal|CreditoFiscal|Ticket|NotaD
 
 # Document types that can be rendered using the ticket format.
 TICKET_ELIGIBLE_TIPOS = {"01", "03", "04", "05", "06"}
-
-# Short labels displayed in the "Tipo de DTE" column.
-TIPO_DTE_SHORT_DESC = {
-    "consumidor final": "cons final",
-    "crédito fiscal": "cred fiscal",
-    "credito fiscal": "cred fiscal",
-    "nota de crédito": "not crédito",
-    "nota de credito": "not crédito",
-    "nota de débito": "not debito",
-    "nota de debito": "not debito",
-    "nota de remisión": "not remisión",
-    "nota de remision": "not remisión",
-    "cr-07": "CR-07",
-    "comp. retención": "comp reten",
-    "comp. retencion": "comp reten",
-    "factura sujeto excluido": "suj exclu",
-    "sujeto excluido": "suj exclu",
-    "suj exclu": "suj exclu",
-}
 
 # Fallback mapping used when ``tipoDte`` is not available but the
 # human-readable description is known.
@@ -2067,10 +2050,10 @@ class FacturacionTab(QWidget):
     """Tab para gestionar facturas y notas."""
 
     # Valores por defecto para los anchos. Modifíquelos según sus necesidades.
-    _MIN_TABLE_WIDTH = 350
-    _PREVIEW_MIN_RATIO = 0.3
+    _MIN_TABLE_WIDTH = 260
+    _PREVIEW_MIN_RATIO = 0.25
     _PREVIEW_MAX_RATIO = 0.7
-    _DEFAULT_PREVIEW_RATIO = 0.45
+    _DEFAULT_PREVIEW_RATIO = 1.0
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -2169,6 +2152,7 @@ class FacturacionTab(QWidget):
         )
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         left_layout.addWidget(self.table)
 
@@ -2180,8 +2164,8 @@ class FacturacionTab(QWidget):
         self.btn_remision.clicked.connect(self.abrir_dialogo_nota_remision)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
-        self.btn_evento_contingencia = QPushButton("Evento de contingencia…")
-        self.btn_retencion = QPushButton("Retención de IVA")
+        self.btn_evento_contingencia = QPushButton("Evento contingencia")
+        self.btn_retencion = QPushButton("Retención IVA")
         self.btn_imprimir = QPushButton("Imprimir")
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
@@ -2199,14 +2183,14 @@ class FacturacionTab(QWidget):
             self.btn_eliminar,
         ]
         custom_widths = {
-            self.btn_evento_contingencia: 160,
-            self.btn_retencion: 140,
-            self.btn_nota: 140,
-            self.btn_remision: 130,
-            self.btn_enviar: 110,
-            self.btn_imprimir: 110,
-            self.btn_abrir_pdf: 110,
-            self.btn_eliminar: 120,
+            self.btn_evento_contingencia: 115,
+            self.btn_retencion: 90,
+            self.btn_nota: 118,
+            self.btn_remision: 100,
+            self.btn_enviar: 45,
+            self.btn_imprimir: 65,
+            self.btn_abrir_pdf: 66,
+            self.btn_eliminar: 80,
         }
         for b in button_lineup:
             # Botones más angostos y estilo local para sobreescribir el QSS global.
@@ -2244,7 +2228,7 @@ class FacturacionTab(QWidget):
         self.preview_splitter.addWidget(left_container)
         self.preview_splitter.addWidget(preview_container)
         self.preview_splitter.setStretchFactor(0, 1)
-        self.preview_splitter.setStretchFactor(1, 1)
+        self.preview_splitter.setStretchFactor(1, 2)
         main_layout.addWidget(self.preview_splitter)
         QTimer.singleShot(0, self._initialize_splitter_sizes)
 
@@ -2451,6 +2435,17 @@ class FacturacionTab(QWidget):
         item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
         return item
 
+    @staticmethod
+    def _format_declaracion_tipo(raw_tipo: object) -> tuple[str, str | None]:
+        """Return a short display label plus an optional tooltip with the raw code."""
+
+        raw_text = str(raw_tipo or "").strip()
+        if not raw_text:
+            return "", None
+        label = short_tipo_label(raw_text) or raw_text
+        tooltip = raw_text if label != raw_text else None
+        return label, tooltip
+
     def _configure_declaracion_table(self, headers: List[str]) -> None:
         self.declaracion_table.clear()
         self.declaracion_table.setColumnCount(len(headers))
@@ -2555,7 +2550,11 @@ class FacturacionTab(QWidget):
             self.declaracion_table.setItem(row, 1, self._create_table_item(str(fecha)))
 
             tipo = getattr(registro, "tipo", "") or ""
-            self.declaracion_table.setItem(row, 2, self._create_table_item(str(tipo)))
+            tipo_display, tipo_tip = self._format_declaracion_tipo(tipo)
+            tipo_item = self._create_table_item(str(tipo_display))
+            if tipo_tip:
+                tipo_item.setToolTip(f"Código: {tipo_tip}")
+            self.declaracion_table.setItem(row, 2, tipo_item)
 
             codigo = getattr(registro, "numero_doc_del", None) or getattr(
                 registro, "codigo_generacion", ""
@@ -2622,7 +2621,11 @@ class FacturacionTab(QWidget):
             self.declaracion_table.setItem(row, 1, self._create_table_item(str(fecha)))
 
             tipo = getattr(registro, "tipo", "") or ""
-            self.declaracion_table.setItem(row, 2, self._create_table_item(str(tipo)))
+            tipo_display, tipo_tip = self._format_declaracion_tipo(tipo)
+            tipo_item = self._create_table_item(str(tipo_display))
+            if tipo_tip:
+                tipo_item.setToolTip(f"Código: {tipo_tip}")
+            self.declaracion_table.setItem(row, 2, tipo_item)
 
             codigo = getattr(registro, "codigo_generacion", "") or ""
             self.declaracion_table.setItem(row, 3, self._create_table_item(str(codigo)))
@@ -2684,7 +2687,11 @@ class FacturacionTab(QWidget):
             self.declaracion_table.setItem(row, 0, checkbox)
 
             tipo = getattr(registro, "tipo_documento", "") or ""
-            self.declaracion_table.setItem(row, 1, self._create_table_item(str(tipo)))
+            tipo_display, tipo_tip = self._format_declaracion_tipo(tipo)
+            tipo_item = self._create_table_item(str(tipo_display))
+            if tipo_tip:
+                tipo_item.setToolTip(f"Código: {tipo_tip}")
+            self.declaracion_table.setItem(row, 1, tipo_item)
 
             estado = getattr(registro, "estado", "") or ""
             self.declaracion_table.setItem(row, 2, self._create_table_item(str(estado)))
@@ -7163,6 +7170,10 @@ class FacturacionTab(QWidget):
         except Exception:
             QMessageBox.warning(self, "Nota", "No se pudo leer la factura")
             return
+        if not venta_id:
+            QMessageBox.warning(self, "Nota", "Factura sin venta asociada")
+            logger.warning("Nota %s abortada: factura sin venta_id json=%s", tipo, json_path)
+            return
 
         snapshot_payload = None
         if venta_id:
@@ -7505,9 +7516,11 @@ class FacturacionTab(QWidget):
             return
 
         try:
+            logger.info("Crear nota tipo=%s venta_id=%s monto=%.2f motivo=%s", tipo, venta_id, monto, motivo)
             nota_id = self.manager.db.agregar_nota(
                 tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
             )
+            logger.info("Nota creada nota_id=%s venta_id=%s tipo=%s", nota_id, venta_id, tipo)
         except ValueError as exc:
             message = str(exc)
             if "saldo restante" in message.lower():
@@ -7559,6 +7572,13 @@ class FacturacionTab(QWidget):
                     self.manager.db,
                     nota_id,
                     ambiente=ambiente,
+                    strict_snapshot=False,
+                )
+                logger.info(
+                    "Nota crédito generada nota_id=%s venta_id=%s source=%s",
+                    nota_id,
+                    venta_id,
+                    "snapshot" if snapshot_exc is None else "json_fallback",
                 )
             except SnapshotNotFoundError as exc:
                 snapshot_exc = exc
@@ -7567,10 +7587,34 @@ class FacturacionTab(QWidget):
                 nota_json = generar_nota_debito_json(
                     self.manager.db, nota_id, ambiente=ambiente
                 )
+                logger.info(
+                    "Nota débito generada nota_id=%s venta_id=%s source=%s",
+                    nota_id,
+                    venta_id,
+                    "snapshot" if snapshot_exc is None else "json_fallback",
+                )
             except SnapshotNotFoundError as exc:
                 snapshot_exc = exc
         else:
             nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+
+        def _normalize_doc_relacionado_fecha(payload: dict) -> None:
+            try:
+                ident_base = data.get("identificacion", {}) if isinstance(data, Mapping) else {}
+                base_fecha = (
+                    ident_base.get("fecEmi")
+                    or ident_base.get("fechaEmision")
+                    or ident_base.get("fechaEmi")
+                )
+                if base_fecha:
+                    base_fecha = str(base_fecha).split("T")[0]
+                hoy = base_fecha or date.today().isoformat()
+                rel = payload.get("documentoRelacionado") or []
+                for doc in rel:
+                    if isinstance(doc, dict):
+                        doc["fechaEmision"] = hoy
+            except Exception:
+                logger.debug("No se pudo normalizar fecha de documentoRelacionado", exc_info=True)
 
         if nota_json is None and snapshot_exc:
             logger.warning(
@@ -7709,6 +7753,9 @@ class FacturacionTab(QWidget):
                 # Las notas de remisión no usan snapshot y ya deberían haber sido
                 # generadas correctamente.
                 pass
+
+        if isinstance(nota_json, dict):
+            _normalize_doc_relacionado_fecha(nota_json)
 
         def _to_float(value: object) -> float:
             if isinstance(value, (int, float)):
@@ -8493,25 +8540,13 @@ class FacturacionTab(QWidget):
         self.load_invoices()
         self._clear_preview_files()
 
-    def delete_invoice(self):
-        """Elimina una factura junto con archivos y correlativos asociados."""
-        data = self._selected_entry()
-        if not data or data.get("row_type") not in {"venta", "ticket", "orphan"}:
-            QMessageBox.warning(self, "Eliminar", "Seleccione una factura")
-            return
+    def _delete_invoice_entry(self, data: dict[str, Any]) -> bool:
+        """Eliminar una entrada de factura/ticket/orphan y limpiar artefactos."""
         rtype = data.get("row_type")
+        if rtype not in {"venta", "ticket", "orphan"}:
+            return False
         venta_id = data.get("venta_id")
 
-        confirm = QMessageBox.question(
-            self,
-            "Eliminar",
-            "¿Eliminar factura y archivos asociados?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
-        if confirm != QMessageBox.Yes:
-            return
-
-        # Handle orphan entries without touching the sales database
         if rtype == "orphan":
             pdf_path = data.get("pdf")
             json_path = data.get("json")
@@ -8526,7 +8561,7 @@ class FacturacionTab(QWidget):
             if tipo_codigo:
                 extra_data["tipoDte"] = tipo_codigo
 
-            correlativo_revertido = self._cleanup_invoice_artifacts(
+            self._cleanup_invoice_artifacts(
                 data.get("venta_id"),
                 pdf_path=pdf_path,
                 ticket_path=None if pdf_path else json_path,
@@ -8535,7 +8570,6 @@ class FacturacionTab(QWidget):
                 prompt_revert=True,
             )
 
-            # Remove database record tied to the orphan file
             if path:
                 try:
                     self.manager.db.cursor.execute(
@@ -8555,23 +8589,12 @@ class FacturacionTab(QWidget):
                                     os.remove(candidate)
                                 except OSError:
                                     pass
+            return True
 
-            mensaje = f"{data.get('tipo') or 'Documento'} eliminado"
-            if correlativo_revertido:
-                mensaje += "\nEl correlativo regresó al valor anterior."
-
-            QMessageBox.information(self, "Eliminar", mensaje)
-            self.load_invoices()
-            return
-
-        factura = None
-        if rtype in {"venta", "ticket"}:
-            factura = self._selected_factura()
         pdf_path, ticket_path, dte_json_path = self._get_invoice_paths(
-            venta_id, factura=factura, entry=data
+            venta_id, entry=data
         )
 
-        venta = None
         extra_data = {}
         try:
             venta = self.manager.db.get_venta_by_id(venta_id)
@@ -8586,11 +8609,9 @@ class FacturacionTab(QWidget):
                     extra_data = {}
 
         if not self.manager.db.delete_venta(venta_id):
-            QMessageBox.critical(self, "Eliminar", "No se pudo eliminar la venta seleccionada.")
-            return
-        self.manager.refresh_data()
+            return False
 
-        correlativo_revertido = self._cleanup_invoice_artifacts(
+        self._cleanup_invoice_artifacts(
             venta_id,
             pdf_path=pdf_path,
             ticket_path=ticket_path,
@@ -8598,12 +8619,62 @@ class FacturacionTab(QWidget):
             extra_data=extra_data,
             prompt_revert=True,
         )
+        return True
 
-        mensaje = "Factura eliminada"
-        if correlativo_revertido:
-            mensaje += "\nEl correlativo regresó al valor anterior."
-        QMessageBox.information(self, "Eliminar", mensaje)
-        self.load_invoices()
+    def delete_invoice(self):
+        """Elimina una o varias facturas junto con archivos y correlativos asociados."""
+        selected_indexes = self.table.selectionModel().selectedRows()
+        if not selected_indexes:
+            QMessageBox.warning(self, "Eliminar", "Seleccione una factura")
+            return
+
+        entries: list[dict[str, Any]] = []
+        for idx in selected_indexes:
+            item = self.table.item(idx.row(), 0)
+            data = item.data(Qt.UserRole) if item else None
+            if data and data.get("row_type") in {"venta", "ticket", "orphan"}:
+                entries.append(data)
+        if not entries:
+            QMessageBox.warning(self, "Eliminar", "Seleccione una factura válida.")
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar",
+            f"¿Eliminar {len(entries)} documento(s) seleccionados y archivos asociados?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        eliminadas = 0
+        errores: list[str] = []
+        for entry in entries:
+            try:
+                ok = self._delete_invoice_entry(entry)
+            except Exception:
+                logger.exception("No se pudo eliminar la factura seleccionada")
+                ok = False
+            if ok:
+                eliminadas += 1
+            else:
+                errores.append(str(entry.get("venta_id") or entry.get("name") or entry.get("numero_control") or "?"))
+
+        if eliminadas:
+            try:
+                self.manager.refresh_data()
+            except Exception:
+                logger.exception("No se pudo refrescar datos tras eliminar facturas")
+            self.load_invoices()
+            self._clear_preview_files()
+
+        if eliminadas:
+            mensaje = f"{eliminadas} documento(s) eliminado(s)."
+            if errores:
+                mensaje += f" No se eliminaron: {', '.join(errores)}"
+            QMessageBox.information(self, "Eliminar", mensaje)
+        elif errores:
+            QMessageBox.warning(self, "Eliminar", "No se pudieron eliminar las facturas seleccionadas.")
 
     # ------------------------------------------------------------------
     # Previsualización de facturas

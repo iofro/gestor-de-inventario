@@ -20,6 +20,7 @@ from utils.facturacion_records import (
     tipo_code_from_desc,
     get_facturacion_rows as _facturacion_rows,
     TIPO_DTE_DESC,
+    short_tipo_label,
     format_envio_state,
 )
 from paths import (
@@ -176,6 +177,7 @@ class PreviewRow:
     fecha: str
     fecha_obj: datetime | None
     tipo: str
+    tipo_codigo: str | None
     codigo_generacion: str
     numero_control: str | None
     cliente: str
@@ -191,7 +193,7 @@ class PreviewRow:
     def sort_key(self) -> tuple:
         return (
             self.fecha_obj or datetime.max,
-            self.tipo or "",
+            self.tipo_codigo or self.tipo or "",
             self.numero_control or "",
             self.codigo_generacion,
         )
@@ -1123,6 +1125,21 @@ def _merge_dataset_discards(
     return extras
 
 
+def _preview_tipo_label(row: dict) -> tuple[str, str | None]:
+    raw_tipo = row.get("tipo")
+    tipo_codigo: str | None = None
+    if raw_tipo is not None:
+        raw_texto = str(raw_tipo).strip()
+        if raw_texto:
+            tipo_codigo = raw_texto.zfill(2) if raw_texto.isdigit() else raw_texto
+
+    display_source = row.get("tipo_desc") or tipo_codigo or raw_tipo
+    display = short_tipo_label(display_source)
+    if not display:
+        display = str(display_source or "").strip()
+    return display, tipo_codigo
+
+
 def _build_preview_row_anexo_i(
     row: dict, codigo: str, base: str | None, manual: str | None
 ) -> PreviewRow:
@@ -1135,6 +1152,7 @@ def _build_preview_row_anexo_i(
     if sello:
         sello = str(sello).strip() or None
     cliente = _extract_cliente(row)
+    tipo_display, tipo_codigo = _preview_tipo_label(row)
     identificacion, dui, nombre_identificado = _identificacion_anexo_i(row)
     cliente_nombre = nombre_identificado or cliente.get("nombre") or ""
     identificacion_cliente = identificacion or dui or None
@@ -1157,7 +1175,8 @@ def _build_preview_row_anexo_i(
     return PreviewRow(
         fecha=fecha_texto,
         fecha_obj=fecha_obj,
-        tipo=str(row.get("tipo") or ""),
+        tipo=tipo_display,
+        tipo_codigo=tipo_codigo,
         codigo_generacion=codigo,
         numero_control=numero_control,
         cliente=cliente_nombre,
@@ -1185,6 +1204,7 @@ def _build_preview_row_anexo_ii(
         sello = str(sello).strip() or None
     cliente_nombre = _extract_cliente(row).get("nombre") or ""
     montos = _montos_anexo_ii(row)
+    tipo_display, tipo_codigo = _preview_tipo_label(row)
     estado_base_norm = normalize_estado(base)
     estado_manual_norm = normalize_estado(manual)
     override = bool(
@@ -1202,7 +1222,8 @@ def _build_preview_row_anexo_ii(
     return PreviewRow(
         fecha=fecha_texto,
         fecha_obj=fecha_obj,
-        tipo=str(row.get("tipo") or ""),
+        tipo=tipo_display,
+        tipo_codigo=tipo_codigo,
         codigo_generacion=codigo,
         numero_control=numero_control,
         cliente=cliente_nombre,
@@ -2538,4 +2559,3 @@ def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
         descartes_dict,
     )
     return FacturacionDataset(periodo_rows, total_leidos, descartes_dict)
-

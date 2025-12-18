@@ -22,6 +22,7 @@ from paths import (
     DATOS_NEGOCIO_PATH,
     CONFIG_NEGOCIO_PATH,
     LAST_INVENTORY_PATH,
+    user_data_path,
 )
 from dialogs import (
     RegisterSaleDialog,
@@ -1252,6 +1253,10 @@ class MainWindow(QMainWindow):
         self.db = im.DB()
         self.manager = im.InventoryManager(self.db, enable_auto_backup=True)
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
+        self._auto_save_timer = QTimer(self)
+        self._auto_save_timer.setSingleShot(True)
+        self._auto_save_timer.setInterval(1500)
+        self._auto_save_timer.timeout.connect(self._auto_save_inventory)
         self._load_last_inventory_path()
         self._alerto_vendedores_inconsistentes = False
         self.firmador_proc = None
@@ -1276,6 +1281,10 @@ class MainWindow(QMainWindow):
         # immediately instead of waiting for the timer interval.
         self.data_changed.connect(self.facturacion_tab.refresh_and_reload)
         self.data_changed.connect(self._mostrar_historial_general)
+        try:
+            self.db.add_after_commit_callback(self._schedule_auto_save_inventory)
+        except Exception:
+            logger.debug("No se pudo registrar autosave tras commit", exc_info=True)
 
     def iniciar_firmador(self):
         """Lanza el servicio externo de firmado de documentos."""
@@ -2656,6 +2665,12 @@ class MainWindow(QMainWindow):
         dialog = ProductDialog(self.manager._vendedores, self.manager._Distribuidores, self)
         if dialog.exec_():
             data = dialog.get_data()
+            try:
+                logger.debug(
+                    "UI agregar_producto pres_len=%s", len(data.get("presentaciones") or [])
+                )
+            except Exception:
+                pass
             self.manager.add_producto(
                 data["nombre"], data["codigo"], data["sku"], None, None,
                 data["precio_compra"], data["precio_venta_minorista"], data["precio_venta_mayorista"], 0,
@@ -2669,6 +2684,16 @@ class MainWindow(QMainWindow):
                 self.vendedor_combo_filtro.blockSignals(False)
 
             self.filter_products()
+            self._refresh_pos_if_available()
+            if hasattr(self, "compras_tab") and hasattr(self.compras_tab, "load_purchases"):
+                try:
+                    self.compras_tab.load_purchases()
+                except Exception:
+                    logger.exception("No se pudo refrescar compras tras agregar producto")
+            try:
+                self.data_changed.emit()
+            except Exception:
+                logger.exception("No se pudo emitir data_changed tras agregar producto")
             QMessageBox.information(self, "Producto", "Producto agregado correctamente.")
 
     def editar_producto(self):
@@ -2682,6 +2707,12 @@ class MainWindow(QMainWindow):
         dialog = ProductDialog(self.manager._vendedores, self.manager._Distribuidores, self, producto=prod)
         if dialog.exec_():
             data = dialog.get_data()
+            try:
+                logger.debug(
+                    "UI editar_producto pres_len=%s", len(data.get("presentaciones") or [])
+                )
+            except Exception:
+                pass
             self.manager.edit_producto(
                 prod["id"],
                 data["nombre"], data["codigo"], data["sku"],
@@ -2691,6 +2722,16 @@ class MainWindow(QMainWindow):
                 presentaciones=data.get("presentaciones"),
             )
             self.filter_products()
+            self._refresh_pos_if_available()
+            if hasattr(self, "compras_tab") and hasattr(self.compras_tab, "load_purchases"):
+                try:
+                    self.compras_tab.load_purchases()
+                except Exception:
+                    logger.exception("No se pudo refrescar compras tras editar producto")
+            try:
+                self.data_changed.emit()
+            except Exception:
+                logger.exception("No se pudo emitir data_changed tras editar producto")
             QMessageBox.information(self, "Producto", "Producto editado correctamente.")
         self.selected_row = None
 
@@ -2793,11 +2834,12 @@ class MainWindow(QMainWindow):
         confirm.setInformativeText(
             "Proceda solo si está seguro. Vertex no se hace responsable por manipulaciones erróneas en los DTE."
         )
-        confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        confirm.setButtonText(QMessageBox.Yes, "Continuar")
-        confirm.setButtonText(QMessageBox.No, "Regresar")
-        confirm.setDefaultButton(QMessageBox.No)
-        if confirm.exec_() != QMessageBox.Yes:
+        confirm.setStandardButtons(QMessageBox.No)
+        btn_continuar = confirm.addButton("Continuar", QMessageBox.YesRole)
+        btn_regresar = confirm.addButton("Regresar", QMessageBox.NoRole)
+        confirm.setDefaultButton(btn_regresar)
+        confirm.exec_()
+        if confirm.clickedButton() is not btn_continuar:
             return
         self._editar_dte_receptor_y_reenviar(venta_id, tipo_dte, json_path)
 
@@ -3185,6 +3227,11 @@ class MainWindow(QMainWindow):
         self._actualizar_inventario_actual()
         self.sales_tab.load_sales()
         self._refresh_pos_if_available()
+        if hasattr(self.sales_tab, "reset_pos_after_sale"):
+            try:
+                self.sales_tab.reset_pos_after_sale()
+            except Exception:
+                logger.debug("No se pudo resetear POS tras venta CF", exc_info=True)
         self.data_changed.emit()
         self.data_changed.emit()
 
@@ -3409,6 +3456,11 @@ class MainWindow(QMainWindow):
         self._actualizar_inventario_actual()
         self._refresh_pos_if_available()
         self.sales_tab.load_sales()
+        if hasattr(self.sales_tab, "reset_pos_after_sale"):
+            try:
+                self.sales_tab.reset_pos_after_sale()
+            except Exception:
+                logger.debug("No se pudo resetear POS tras venta CCF", exc_info=True)
         self.data_changed.emit()
 
     def registrar_venta_credito_fiscal(self):
@@ -5468,6 +5520,46 @@ class MainWindow(QMainWindow):
         modificado sin guardar.
         """
         self._db_change_counter = self.manager.db.conn.total_changes
+        try:
+            if self._auto_save_timer.isActive():
+                self._auto_save_timer.stop()
+        except Exception:
+            pass
+
+    def _schedule_auto_save_inventory(self) -> None:
+        """Programa un guardado silencioso tras cualquier cambio en BD."""
+        try:
+            self._auto_save_timer.start()
+        except Exception:
+            logger.debug("No se pudo iniciar el temporizador de autosave", exc_info=True)
+
+    def _auto_save_inventory(self) -> None:
+        """Guarda el inventario sin mostrar diálogos."""
+        target = self.ultimo_archivo_json or str(user_data_path("inventario_autosave.json"))
+        try:
+            tab_order = self.get_tab_order()
+        except Exception:
+            tab_order = None
+        try:
+            self.manager.exportar_inventario_json(target, tab_order=tab_order)
+            self._post_guardado_exitoso(target)
+        except Exception:
+            logger.debug("Autosave de inventario fallido", exc_info=True)
+
+    def _save_inventory_silently(self) -> bool:
+        """Guarda el inventario en disco sin mostrar diálogos ni prompts."""
+        target = self.ultimo_archivo_json or str(user_data_path("inventario_autosave.json"))
+        try:
+            tab_order = self.get_tab_order()
+        except Exception:
+            tab_order = None
+        try:
+            self.manager.exportar_inventario_json(target, tab_order=tab_order)
+            self._post_guardado_exitoso(target)
+            return True
+        except Exception:
+            logger.exception("No se pudo guardar el inventario en salida")
+            return False
 
     def _load_last_inventory_path(self):
         """Carga la última ruta usada para guardar el inventario.
@@ -5492,26 +5584,19 @@ class MainWindow(QMainWindow):
             self.ultimo_archivo_json = ultimo
 
     def closeEvent(self, event):
-        if self.manager.db.conn.total_changes == self._db_change_counter:
-            detener_firmador()
-            event.accept()
-            return
-        reply = QMessageBox.question(
-            self,
-            "Salir",
-            "¿Desea guardar el inventario antes de salir?",
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-            QMessageBox.Yes,
-        )
-        if reply == QMessageBox.Yes:
-            guardado = self.guardar_rapido(asincrono=False)
-            if guardado:
-                detener_firmador()
-                event.accept()
-            else:
-                event.ignore()
-        elif reply == QMessageBox.No:
+        try:
+            if self._auto_save_timer.isActive():
+                self._auto_save_timer.stop()
+        except Exception:
+            pass
+        ok = self._save_inventory_silently()
+        if ok:
             detener_firmador()
             event.accept()
         else:
+            QMessageBox.critical(
+                self,
+                "Guardar inventario",
+                "No se pudo guardar el inventario antes de salir. Revisa el archivo de destino.",
+            )
             event.ignore()

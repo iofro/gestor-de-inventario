@@ -74,6 +74,24 @@ TIPO_DTE_DESC = {
     "16": "Nota de remisión de exportación",
 }
 
+TIPO_DTE_SHORT_DESC = {
+    "consumidor final": "cons final",
+    "crédito fiscal": "cred fiscal",
+    "credito fiscal": "cred fiscal",
+    "nota de crédito": "not crédito",
+    "nota de credito": "not crédito",
+    "nota de débito": "not debito",
+    "nota de debito": "not debito",
+    "nota de remisión": "not remisión",
+    "nota de remision": "not remisión",
+    "cr-07": "CR-07",
+    "comp. retención": "comp reten",
+    "comp. retencion": "comp reten",
+    "factura sujeto excluido": "suj exclu",
+    "sujeto excluido": "suj exclu",
+    "suj exclu": "suj exclu",
+}
+
 
 TIPO_DTE_CODE_BY_DESC = {
     "consumidor final": "01",
@@ -125,6 +143,32 @@ def canonical_tipo_label(value: str | None) -> str | None:
     if not key:
         return None
     return CANONICAL_TIPO_LABELS.get(key)
+
+
+def short_tipo_label(tipo: str | None) -> str:
+    if tipo is None:
+        return ""
+
+    text = str(tipo).strip()
+    if not text:
+        return ""
+
+    tipo_desc = text
+    if text.isdigit():
+        tipo_desc = TIPO_DTE_DESC.get(text.zfill(2), text)
+
+    lowered = tipo_desc.strip().lower()
+    mapped = TIPO_DTE_SHORT_DESC.get(lowered)
+    if mapped:
+        return mapped
+
+    canonical = canonical_tipo_label(tipo_desc)
+    if canonical:
+        fallback = TIPO_DTE_SHORT_DESC.get(canonical.lower())
+        if fallback:
+            return fallback
+
+    return tipo_desc
 
 
 def _looks_like_note_label(value: str | None) -> bool:
@@ -708,11 +752,12 @@ def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     try:
         base_path = Path(base_dir)
-        files = list(base_path.glob("*.json"))
+        files = sorted(base_path.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     except Exception:
         files = []
 
     cur = getattr(db, "cursor", None)
+    seen_keys: set[str] = set()
 
     for fpath in files:
         try:
@@ -739,6 +784,11 @@ def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
         codigo_generacion = ident.get("codigoGeneracion") or ident.get("codigo_generacion")
         fecha_emision = ident.get("fecEmi") or ident.get("fechaEmision") or ident.get("fecha")
         hora_emision = ident.get("horEmi") or ident.get("horaEmision") or ident.get("hora")
+        dedupe_key = str(codigo_generacion or numero_control or compra_id or fpath.stem)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+
         parsed_date = None
         fecha_str = ""
         if fecha_emision:
@@ -778,12 +828,16 @@ def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
                 env_row = None
             envio_estado = _map_row_estado(env_row)
 
+        pdf_path = fpath.with_suffix(".pdf")
+        pdf_resolved = resolve_user_visible_path(str(pdf_path)) if pdf_path.exists() else None
+        name_value = numero_control or codigo_generacion or f"FSE-{compra_id or fpath.stem}"
+
         rows.append(
             {
                 "row_type": "orphan",
                 "id": compra_id,
                 "venta_id": None,
-                "name": "suj exclu",
+                "name": name_value,
                 "numero_control": numero_control,
                 "codigo_generacion": codigo_generacion,
                 "fecha": fecha_str,
@@ -797,6 +851,7 @@ def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
                 "tipo": "Factura sujeto excluido",
                 "codigo": "14",
                 "json": resolve_user_visible_path(str(fpath)),
+                "pdf": pdf_resolved,
                 "sign": 1,
             }
         )

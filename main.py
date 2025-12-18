@@ -7,6 +7,7 @@ import logging
 import traceback
 from pathlib import Path
 import secrets
+import string
 
 # Swig-generated types from external libraries (e.g. PyMuPDF) may emit
 # warnings about missing ``__module__`` attributes. Since these wrappers
@@ -148,7 +149,8 @@ def _ensure_admin_recovery(db: DB, parent: QDialog | None = None):
     while username.lower() in existing_names:
         suffix += 1
         username = f"{base_username}{suffix}"
-    password = secrets.token_urlsafe(8)
+    easy_chars = "abcdefghijkmnopqrstuvwxyz23456789"
+    password = "".join(secrets.choice(easy_chars) for _ in range(8))
     try:
         db.add_user(username, password, "admin")
         startup_logger.warning(
@@ -158,11 +160,21 @@ def _ensure_admin_recovery(db: DB, parent: QDialog | None = None):
         QMessageBox.information(
             parent,
             "Administrador de recuperación",
-            "No se encontró ningún usuario administrador.\n"
-            "Se creó un usuario temporal de recuperación:\n\n"
-            f"Usuario: {username}\nContraseña: {password}\n\n"
-            "Inicia sesión con estas credenciales y crea un administrador permanente.",
-        )
+                "No se encontró ningún usuario administrador.\n"
+                "Se creó un usuario temporal de recuperación:\n\n"
+                f"Usuario: {username}\nContraseña: {password}\n\n"
+                "Inicia sesión con estas credenciales y crea un administrador permanente.",
+            )
+        try:
+            QMessageBox.warning(
+                parent,
+                "Importante",
+                "Credenciales de recuperación generadas.\n"
+                "Anótalas de inmediato: sin ellas no podrás volver a entrar.\n\n"
+                f"Usuario: {username}\nContraseña: {password}",
+            )
+        except Exception:
+            pass
     except Exception as exc:
         startup_logger.exception("No se pudo crear el admin de recuperación")
         try:

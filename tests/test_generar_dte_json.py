@@ -2802,3 +2802,175 @@ def test_generar_dte_json_ignores_invalid_venta_tercero_doc(monkeypatch):
     data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     assert data["ventaTercero"] is None
 
+
+def _setup_datos_negocio(tmp_path):
+    import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+    dte_module._load_datos_negocio = lambda: datos
+    svfe_config.DATOS_NEGOCIO_PATH = str(tmp_file)
+    svfe_config.load_datos_negocio = lambda: datos
+    return datos
+
+
+def _add_cliente_cf(db):
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "Cliente Giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+        codActividad="99999",
+    )
+    return db.cursor.lastrowid
+
+
+def test_dte03_comision_anadida_quadra_totales(tmp_path):
+    import dte as dte_module
+
+    _setup_datos_negocio(tmp_path)
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("ProdA", "P1", None, vend_id, None, 0, 0, 0, 10)
+    prod_a = db.cursor.lastrowid
+    db.add_producto("ProdB", "P2", None, vend_id, None, 0, 0, 0, 10)
+    prod_b = db.cursor.lastrowid
+    cliente_id = _add_cliente_cf(db)
+
+    comision_total = Decimal("0.20")
+    venta_total = Decimal("10.20")
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2025-01-01",
+        float(venta_total),
+        "1234567",
+        "06141990011019",
+        "Comercio",
+        extra={
+            "precios_incluyen_iva": True,
+            "pagos": [{"codigo": "01", "montoPago": float(venta_total)}],
+        },
+    )
+    half_commission = float(comision_total / Decimal("2"))
+    db.add_detalle_venta(
+        venta_id,
+        prod_a,
+        1,
+        1,
+        comision=half_commission,
+        tipo_fiscal="gravada",
+        extra={"comision_tipo": "Añadida al total", "comision_monto": half_commission},
+        precio_con_iva=1,
+        vendedor_id=vend_id,
+    )
+    db.add_detalle_venta(
+        venta_id,
+        prod_b,
+        1,
+        9,
+        comision=half_commission,
+        tipo_fiscal="gravada",
+        extra={"comision_tipo": "Añadida al total", "comision_monto": half_commission},
+        precio_con_iva=9,
+        vendedor_id=vend_id,
+    )
+
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    resumen = data["resumen"]
+    total_pagar = Decimal(str(resumen["totalPagar"]))
+    assert total_pagar == venta_total
+    ventas_grav = sum(Decimal(str(i["ventaGravada"])) for i in data["cuerpoDocumento"])
+    iva_val = Decimal(str(resumen["tributos"][0]["valor"])) if resumen.get("tributos") else Decimal("0")
+    assert (ventas_grav + iva_val).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) == total_pagar
+    pagos = sum(Decimal(str(p["montoPago"])) for p in resumen.get("pagos") or [])
+    assert pagos == total_pagar
+
+
+def test_dte03_comision_desglosada_no_modifica_totales(tmp_path):
+    import dte as dte_module
+
+    _setup_datos_negocio(tmp_path)
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("ProdA", "P1", None, vend_id, None, 0, 0, 0, 10)
+    prod_a = db.cursor.lastrowid
+    db.add_producto("ProdB", "P2", None, vend_id, None, 0, 0, 0, 10)
+    prod_b = db.cursor.lastrowid
+    cliente_id = _add_cliente_cf(db)
+
+    venta_total = Decimal("10.00")
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2025-01-02",
+        float(venta_total),
+        "1234567",
+        "06141990011019",
+        "Comercio",
+        extra={
+            "precios_incluyen_iva": True,
+            "pagos": [{"codigo": "01", "montoPago": float(venta_total)}],
+        },
+    )
+    db.add_detalle_venta(
+        venta_id,
+        prod_a,
+        1,
+        1,
+        comision=0.5,
+        tipo_fiscal="gravada",
+        extra={
+            "comision_tipo": "Desglosada (incluida en el precio)",
+            "comision_monto": 0.5,
+        },
+        precio_con_iva=1,
+        vendedor_id=vend_id,
+    )
+    db.add_detalle_venta(
+        venta_id,
+        prod_b,
+        1,
+        9,
+        comision=0.5,
+        tipo_fiscal="gravada",
+        extra={
+            "comision_tipo": "Desglosada (incluida en el precio)",
+            "comision_monto": 0.5,
+        },
+        precio_con_iva=9,
+        vendedor_id=vend_id,
+    )
+
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    resumen = data["resumen"]
+    total_pagar = Decimal(str(resumen["totalPagar"]))
+    assert total_pagar == venta_total
+    ventas_grav = sum(Decimal(str(i["ventaGravada"])) for i in data["cuerpoDocumento"])
+    iva_val = Decimal(str(resumen["tributos"][0]["valor"])) if resumen.get("tributos") else Decimal("0")
+    assert (ventas_grav + iva_val).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) == total_pagar
+    pagos = sum(Decimal(str(p["montoPago"])) for p in resumen.get("pagos") or [])
+    assert pagos == total_pagar

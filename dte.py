@@ -225,6 +225,8 @@ def _map_estado_hacienda(resp: Mapping[str, Any] | None) -> dict[str, str]:
         ui = "Rechazado"
     elif any("ACEPT" in value for value in text_pool if value):
         ui = "Aceptado"
+    elif any(value and token in value for value in text_pool for token in ("ANULA", "INVALID")):
+        ui = "Anulado"
     elif any(value and token in value for value in text_pool for token in ("PROCES", "RECIB", "TRANSMIT")):
         ui = "Enviado"
     elif any(
@@ -3771,7 +3773,6 @@ def generar_dte_json(
                 receptor.setdefault(f, None)
 
     cuerpo = []
-    commission_total = D("0")
     iva_total = D("0")
     total_gravada_sum = D("0")
     total_exenta_sum = D("0")
@@ -3796,6 +3797,14 @@ def generar_dte_json(
     # Quantizers per field (por tipo de DTE)
     q_field_item = d8 if tipo_dte == "03" else d4  # ventaGravada/Exenta/NoSuj por ítem
 
+    def _norm_comision_tipo(value: Any) -> str:
+        text = str(value or "").strip().lower()
+        if "desglo" in text or "inclu" in text:
+            return "desglosada"
+        if text.startswith("añad") or text.startswith("anad") or "añad" in text or "anad" in text:
+            return "anadida"
+        return ""
+
     def _zero_or_item(value: D) -> D:
         dec = q_item(value)
         return D("0.0") if dec == 0 else dec
@@ -3804,27 +3813,242 @@ def generar_dte_json(
         dec = d2(value)
         return D("0.0") if dec == 0 else dec
 
-    for idx, d in enumerate(detalles, 1):
-        try:
-            cant = q_qty(D(str(d.get("cantidad") or 0)))
-        except Exception:
-            cant = q_qty(D(0))
-        if cant <= 0:
-            cant = q_qty(D("1"))
-        try:
-            precio_raw = q_item(
-                D(
-                    str(
-                        d.get("precio_con_iva")
-                        or d.get("precio_unit_con_iva")
-                        or d.get("precio_unitario_con_iva")
-                        or d.get("precio_unitario")
-                        or 0
+    commission_mode = "none"
+    commission_declared_total = D("0")
+    commission_effective = D("0")
+    commission_applied_total = D("0")
+    commission_modes_seen: set[str] = set()
+    price_increments: dict[int, D] = {}
+    precomputed_map: dict[int, dict[str, Any]] = {}
+    venta_for_resumen: dict[str, Any] | dict = venta if isinstance(venta, dict) else {}
+
+    if tipo_dte == "03":
+        pre_items_total = D("0")
+        detalles_info: list[dict[str, Any]] = []
+        for idx, d in enumerate(detalles, 1):
+            raw_extra_det = d.get("extra")
+            extra_det: dict[str, Any] = {}
+            if isinstance(raw_extra_det, str):
+                try:
+                    extra_det = json.loads(raw_extra_det) or {}
+                except Exception:
+                    extra_det = {}
+            elif isinstance(raw_extra_det, dict):
+                extra_det = dict(raw_extra_det)
+
+            try:
+                cant = q_qty(D(str(d.get("cantidad") or 0)))
+            except Exception:
+                cant = q_qty(D(0))
+            if cant <= 0:
+                cant = q_qty(D("1"))
+            try:
+                precio_raw = q_item(
+                    D(
+                        str(
+                            d.get("precio_con_iva")
+                            or d.get("precio_unit_con_iva")
+                            or d.get("precio_unitario_con_iva")
+                            or d.get("precio_unitario")
+                            or 0
+                        )
                     )
                 )
+            except Exception:
+                precio_raw = q_item(D(0))
+            desc_raw = d4(D(str(d.get("descuento") or 0)))
+            if desc_raw < 0:
+                desc_raw = D("0")
+            desc_tipo = str(d.get("descuento_tipo") or "$")
+
+            tipo_fiscal_item = normalize_tipo_fiscal(d.get("tipo_fiscal"))
+
+            comision_raw_val = (
+                extra_det.get("comision_monto")
+                if extra_det.get("comision_monto") not in (None, "", "None")
+                else (d.get("comision") or 0)
             )
+            try:
+                comision_monto = D(str(comision_raw_val or 0))
+            except Exception:
+                comision_monto = D("0")
+            comision_tipo = _norm_comision_tipo(
+                extra_det.get("comision_tipo") or d.get("comision_tipo")
+            )
+            # Si no hay tipo, tratamos la comisión como informativa por defecto
+            if comision_monto > 0 and not comision_tipo:
+                comision_tipo = "informativa"
+            if comision_monto > 0:
+                commission_declared_total += comision_monto
+                commission_modes_seen.add(comision_tipo or "informativa")
+
+            if tipo_fiscal_item == "exenta":
+                calcs_pre = compute_line_totals(cant, precio_raw, desc_raw, desc_tipo, iva_rate=D("0"))
+            elif tipo_fiscal_item in {"no_sujeta", "no_gravada"}:
+                calcs_pre = compute_line_totals(cant, precio_raw, desc_raw, desc_tipo, iva_rate=D("0"))
+            else:
+                if precios_incluyen_iva:
+                    calcs_pre = compute_line_totals(cant, precio_raw, desc_raw, desc_tipo)
+                else:
+                    calcs_pre = compute_line_totals(cant, precio_raw, desc_raw, desc_tipo, iva_rate=D("0"))
+
+            pre_total_iva = calcs_pre["total_con_iva"]
+            pre_items_total += pre_total_iva
+
+            detalles_info.append(
+                {
+                    "idx": idx,
+                    "cant": cant,
+                    "precio_raw": precio_raw,
+                    "desc_raw": desc_raw,
+                    "desc_tipo": desc_tipo,
+                    "tipo_fiscal_item": tipo_fiscal_item,
+                    "extra_det": extra_det,
+                    "comision_monto": comision_monto,
+                    "comision_tipo": comision_tipo,
+                    "pre_total_iva": pre_total_iva,
+                }
+            )
+
+        info_by_idx = {info["idx"]: info for info in detalles_info}
+
+        any_added = any(
+            info["comision_monto"] > 0 and info["comision_tipo"] == "anadida"
+            for info in detalles_info
+        )
+        any_commission = any(info["comision_monto"] > 0 for info in detalles_info)
+
+        if any_added:
+            commission_mode = "anadida"
+        elif any_commission:
+            commission_mode = "informativa"
+        else:
+            commission_mode = "none"
+
+        venta_total_raw = None
+        if isinstance(venta, dict):
+            venta_total_raw = venta.get("total")
+        try:
+            venta_total_dec = money(venta_total_raw) if venta_total_raw is not None else None
         except Exception:
-            precio_raw = q_item(D(0))
+            venta_total_dec = None
+        commission_from_total = D("0")
+        if venta_total_dec is not None and pre_items_total > 0:
+            commission_from_total = money(venta_total_dec - pre_items_total)
+            if commission_from_total < 0:
+                commission_from_total = D("0")
+
+        if commission_mode == "anadida":
+            commission_effective = commission_declared_total or commission_from_total
+            if commission_effective < 0:
+                commission_effective = D("0")
+            commission_effective = money(commission_effective)
+            commission_applied_total = commission_effective
+            if commission_effective > 0 and pre_items_total > 0:
+                allocs: list[tuple[int, D, D]] = []
+                remaining = commission_effective
+                total_items = len(detalles_info)
+                for i, info in enumerate(detalles_info, 1):
+                    peso = D("1") / D(str(total_items))
+                    if pre_items_total > 0:
+                        peso = info["pre_total_iva"] / pre_items_total
+                    inc_line = money(commission_effective * peso)
+                    allocs.append((info["idx"], inc_line, info["cant"]))
+                    remaining = money(remaining - inc_line)
+                if remaining != 0 and allocs:
+                    # Ajustar al ítem con mayor total para cuadrar
+                    allocs_sorted = sorted(allocs, key=lambda t: detalles_info[t[0] - 1]["pre_total_iva"], reverse=True)
+                    target_idx = allocs_sorted[0][0]
+                    allocs = [(idx, inc + remaining if idx == target_idx else inc, cant) for idx, inc, cant in allocs]
+                for idx, inc_line, cant in allocs:
+                    if cant <= 0:
+                        continue
+                    per_unit = q_item(inc_line / cant)
+                    price_increments[idx] = per_unit
+                    info_ref = info_by_idx.get(idx, {})
+                    logger.info(
+                        "DTE03.COMISION.ITEM idx=%s inc_line=%.2f inc_unit=%.8f pre_total=%.4f cant=%s",
+                        idx,
+                        float(inc_line),
+                        float(per_unit),
+                        float(info_ref.get("pre_total_iva", D("0"))),
+                        info_ref.get("cant"),
+                    )
+                total_con_comision = money(pre_items_total + commission_effective)
+                if isinstance(venta, dict):
+                    venta_for_resumen = dict(venta)
+                    venta_for_resumen["total"] = float(total_con_comision)
+            else:
+                if isinstance(venta, dict):
+                    venta_for_resumen = dict(venta)
+                    venta_for_resumen["total"] = float(money(pre_items_total))
+        else:
+            commission_effective = D("0")
+            commission_applied_total = D("0")
+            if commission_mode == "informativa" and isinstance(venta, dict):
+                venta_for_resumen = dict(venta)
+                venta_for_resumen["total"] = float(money(pre_items_total))
+            else:
+                venta_for_resumen = venta if isinstance(venta, dict) else {}
+
+        for info in detalles_info:
+            precomputed_map[info["idx"]] = info
+
+        commission_applied_total = money(commission_applied_total)
+        commission_declared_total = money(commission_declared_total)
+        if commission_mode:
+            commission_modes_seen.add(commission_mode)
+
+    venta_resumen_source = venta_for_resumen if venta_for_resumen else venta
+
+    for idx, d in enumerate(detalles, 1):
+        pre_info = precomputed_map.get(idx)
+        if pre_info:
+            cant = pre_info["cant"]
+            raw_extra_det = pre_info["extra_det"]
+            extra_det = dict(raw_extra_det) if isinstance(raw_extra_det, dict) else {}
+            precio_raw = pre_info["precio_raw"]
+            desc_raw = pre_info["desc_raw"]
+            desc_tipo = pre_info["desc_tipo"]
+            tipo_fiscal_item = pre_info["tipo_fiscal_item"]
+        else:
+            try:
+                cant = q_qty(D(str(d.get("cantidad") or 0)))
+            except Exception:
+                cant = q_qty(D(0))
+            if cant <= 0:
+                cant = q_qty(D("1"))
+            raw_extra_det = d.get("extra")
+            extra_det = {}
+            if isinstance(raw_extra_det, str):
+                try:
+                    extra_det = json.loads(raw_extra_det) or {}
+                except Exception:
+                    extra_det = {}
+            elif isinstance(raw_extra_det, dict):
+                extra_det = dict(raw_extra_det)
+            try:
+                precio_raw = q_item(
+                    D(
+                        str(
+                            d.get("precio_con_iva")
+                            or d.get("precio_unit_con_iva")
+                            or d.get("precio_unitario_con_iva")
+                            or d.get("precio_unitario")
+                            or 0
+                        )
+                    )
+                )
+            except Exception:
+                precio_raw = q_item(D(0))
+            desc_raw = d4(D(str(d.get("descuento") or 0)))
+            if desc_raw < 0:
+                desc_raw = D("0")
+            desc_tipo = str(d.get("descuento_tipo") or "$")
+            tipo_fiscal_item = normalize_tipo_fiscal(d.get("tipo_fiscal"))
+        inc_unit = price_increments.get(idx, D("0"))
+        if inc_unit:
+            precio_raw = q_item(precio_raw + inc_unit)
         try:
             tipo_item = int(d.get("tipoItem", 1))
         except Exception:
@@ -3838,11 +4062,6 @@ def generar_dte_json(
         if uni_medida not in UNIDADES_MEDIDA_PERMITIDAS:
             uni_medida = 59
 
-        desc_raw = d4(D(str(d.get("descuento") or 0)))
-        if desc_raw < 0:
-            desc_raw = D("0")
-        desc_tipo = str(d.get("descuento_tipo") or "$")
-
         def _calc_desc(bruto: D) -> D:
             if desc_tipo == "%":
                 monto = d4(bruto * desc_raw / D("100"))
@@ -3850,7 +4069,6 @@ def generar_dte_json(
                 monto = d4(desc_raw)
             return monto if monto <= bruto else bruto
 
-        tipo_fiscal_item = normalize_tipo_fiscal(d.get("tipo_fiscal"))
         no_gravado_val = D("0")
         if tipo_fiscal_item == "exenta":
             calcs = compute_line_totals(cant, precio_raw, desc_raw, desc_tipo, iva_rate=D("0"))
@@ -3963,10 +4181,6 @@ def generar_dte_json(
             venta_no_suj = D("0")
         if tipo_dte not in {"03", "05", "06"}:
             iva_total += iva_val
-        try:
-            commission_total += D(str(d.get("comision") or 0))
-        except Exception:
-            pass
         trib_code_raw = d.get("codTributo")
         if not trib_code_raw:
             raw = d.get("tributos")
@@ -4121,7 +4335,7 @@ def generar_dte_json(
 
     resumen = calcular_resumen(
         items_total,
-        venta,
+        venta_resumen_source,
         fiscal=fiscal_totals,
         extra=extra,
         tipo_dte=tipo_dte,
@@ -4139,8 +4353,6 @@ def generar_dte_json(
                 float(expected_rete),
                 float(resumen_rete),
             )
-
-    commission_total = money(commission_total)
 
     descu_no_suj = money(D(str(resumen.get("descuNoSuj", 0))))
     descu_exenta = money(D(str(resumen.get("descuExenta", 0))))
@@ -4207,7 +4419,7 @@ def generar_dte_json(
         monto_total_operacion_calc = d2(
             sub_total_calc + iva_calc + iva_perci1 + otros_tributos - iva_rete1 - rete_renta
         )
-        total_pagar_calc = d2(monto_total_operacion_calc + commission_total)
+        total_pagar_calc = d2(monto_total_operacion_calc)
 
         resumen["montoTotalOperacion"] = monto_total_operacion_calc
         resumen["totalPagar"] = total_pagar_calc
@@ -4251,7 +4463,7 @@ def generar_dte_json(
                 sub_total_calc + total_no_gravado + iva_calc
             )
 
-        total_pagar_calc = money(monto_total_operacion_calc + commission_total)
+        total_pagar_calc = money(monto_total_operacion_calc)
 
         resumen["subTotalVentas"] = sub_total_ventas_calc
         resumen["totalDescu"] = total_descuentos_calc
@@ -4334,7 +4546,7 @@ def generar_dte_json(
         print(
             f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
         )
-    calc_total_commission = d2(calc_total + commission_total)
+    calc_total_commission = calc_total
     if "totalPagar" in resumen and abs(
         calc_total_commission - D(str(resumen.get("totalPagar", 0)))
     ) > D("0.01"):
@@ -4452,6 +4664,40 @@ def generar_dte_json(
             ultimo = resumen["pagos"][-1]
             ult_m = D(str(ultimo.get("montoPago") or 0))
             ultimo["montoPago"] = money(ult_m + delta)
+    else:
+        suma_pagos = D("0")
+
+    if tipo_dte == "03":
+        total_operacion_dec = money(D(str(resumen.get("montoTotalOperacion") or 0)))
+        if total_pagar_dec != total_operacion_dec:
+            logger.info(
+                "DTE03.TOTAL.AJUSTE totalPagar %.2f -> %.2f para alinear con montoTotalOperacion",
+                float(total_pagar_dec),
+                float(total_operacion_dec),
+            )
+            resumen["totalPagar"] = total_operacion_dec
+            total_pagar_dec = total_operacion_dec
+        if abs(total_pagar_dec - calc_total) > D("0.01"):
+            raise ValidationError(
+                f"totalPagar {total_pagar_dec:.2f} no cuadra con monto calculado {calc_total:.2f}"
+            )
+        if resumen.get("pagos"):
+            suma_pagos = money(suma_pagos)
+            if abs(total_pagar_dec - suma_pagos) > D("0.01"):
+                raise ValidationError(
+                    f"suma pagos {suma_pagos:.2f} no cuadra con totalPagar {total_pagar_dec:.2f}"
+                )
+        commission_declared_log = money(commission_declared_total)
+        commission_omitted = money(commission_declared_log - commission_applied_total)
+        logger.info(
+            "DTE03.COMISION modo=%s aplicada=%.4f omitida=%.4f total_lineas=%.2f total_pagar=%.2f suma_pagos=%.2f",
+            ",".join(sorted(commission_modes_seen)) or (commission_mode or "sin_comision"),
+            float(commission_applied_total),
+            float(commission_omitted),
+            float(calc_total),
+            float(total_pagar_dec),
+            float(suma_pagos),
+        )
     def _quantize_money(value: D) -> D:
         dec = money(value)
         return D("0.0") if dec == 0 else dec
@@ -8720,20 +8966,37 @@ def enviar_evento_anulacion(db: DB, evento_id: int, data: dict) -> dict:
 
     codigo_generacion = None
     numero_control = None
+    numero_control_doc = None
     if isinstance(ident, _Mapping):
         codigo_generacion = ident.get("codigoGeneracion")
         numero_control = ident.get("numeroControl")
+    if isinstance(data, _Mapping):
+        doc_val = data.get("documento")
+        if isinstance(doc_val, _Mapping):
+            numero_control_doc = doc_val.get("numeroControl")
+
+    target_venta_id = evento_id
+    if numero_control_doc:
+        try:
+            row = db.cursor.execute(
+                "SELECT venta_id FROM dte_envios WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?) ORDER BY id DESC LIMIT 1",
+                (str(numero_control_doc).strip().upper(),),
+            ).fetchone()
+            if row:
+                target_venta_id = row["venta_id"] if hasattr(row, "__getitem__") else row[0]
+        except Exception:
+            logger.exception("No se pudo resolver venta_id por numero_control %s", numero_control_doc)
 
     try:
         respuesta = _enviar_invalidacion(db, data)
     except Exception:
         db.registrar_envio_dte(
-            evento_id,
+            target_venta_id,
             "evento",
             "Rechazado",
             "",
             codigo_generacion=codigo_generacion,
-            numero_control=numero_control,
+            numero_control=numero_control_doc or numero_control,
         )
         raise
 
@@ -8752,14 +9015,32 @@ def enviar_evento_anulacion(db: DB, evento_id: int, data: dict) -> dict:
             sello = sello_raw
 
     db.registrar_envio_dte(
-        evento_id,
+        target_venta_id,
         "evento",
         estado,
         sello,
         respuesta,
         codigo_generacion=codigo_generacion,
-        numero_control=numero_control,
+        numero_control=numero_control_doc or numero_control,
     )
+
+    if isinstance(db, DB) and estado.lower() != "rechazado":
+        try:
+            db.update_envio_estado_ui(
+                venta_id=target_venta_id,
+                numero_control=numero_control_doc or numero_control,
+                codigo_generacion=codigo_generacion,
+                estado_ui="Anulado",
+                estado_ui_tag="anulacion",
+            )
+        except Exception:
+            logger.exception("No se pudo marcar estado_ui=Anulado tras anulación")
+
+    try:
+        if hasattr(db, "update_venta_estado") and estado.lower() != "rechazado":
+            db.update_venta_estado(target_venta_id, "Anulada")
+    except Exception:
+        logger.exception("No se pudo actualizar estado de la venta tras anulación")
 
     if not isinstance(respuesta, _Mapping):
         return {"estado": estado, "sello": sello}

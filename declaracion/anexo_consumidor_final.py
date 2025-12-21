@@ -6,12 +6,14 @@ from typing import Dict, Iterable, Literal, Optional
 
 import csv
 import re
+import json
 from collections import OrderedDict
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from paths import DATOS_NEGOCIO_PATH
 
 ClaseDoc = Literal["1", "2", "4"]
 TipoDocCF = Literal["01", "02", "10", "11"]
@@ -92,6 +94,24 @@ MONTO_FIELDS = [
     "total_ventas",
 ]
 CERO_DECIMAL = Decimal("0.00")
+RENTA_DEFAULT_OPERACION = "1"
+RENTA_DEFAULT_INGRESO = "3"
+RENTA_DEFAULT_STRICT = True
+VALIDATION_STRICT_DEFAULT = True
+LENGTH_LIMITS_CF = {
+    "numero_resolucion": 20,
+    "serie": 20,
+    "ctrl_interno_del": 20,
+    "ctrl_interno_al": 20,
+    "numero_doc_del": 40,
+    "numero_doc_al": 40,
+    "nro_maquina": 20,
+    "codigo_generacion": 40,
+    "numero_control": 40,
+    "tipo_operacion": 2,
+    "tipo_ingreso": 2,
+}
+DEFAULT_CSV_DELIMITER = ";"
 
 __all__ = [
     "VentaCF",
@@ -208,17 +228,128 @@ def _validar_total_montos(
     return
 
 
-def _normalize_renta_fields(registro: VentaCF, periodo: str) -> tuple[str, str]:
+def _load_renta_config() -> dict[str, object]:
+    cfg = {
+        "tipo_operacion_default": RENTA_DEFAULT_OPERACION,
+        "tipo_ingreso_default": RENTA_DEFAULT_INGRESO,
+        "strict": RENTA_DEFAULT_STRICT,
+        "strict_validations": VALIDATION_STRICT_DEFAULT,
+        "csv_delimiter": DEFAULT_CSV_DELIMITER,
+    }
+    try:
+        raw = json.loads(Path(DATOS_NEGOCIO_PATH).read_text(encoding="utf-8"))
+    except Exception:
+        return cfg
+    if not isinstance(raw, dict):
+        return cfg
+    anexos = raw.get("anexos_cf") or raw.get("anexos")
+    if not isinstance(anexos, dict):
+        return cfg
+    op = anexos.get("renta_tipo_operacion_default")
+    ing = anexos.get("renta_tipo_ingreso_default")
+    strict = anexos.get("strict_renta_fields")
+    delim = anexos.get("csv_delimiter")
+    if isinstance(op, str) and op.strip():
+        cfg["tipo_operacion_default"] = op.strip()
+    if isinstance(ing, str) and ing.strip():
+        cfg["tipo_ingreso_default"] = ing.strip()
+    if isinstance(strict, bool):
+        cfg["strict"] = strict
+    if isinstance(delim, str) and delim.strip():
+        cfg["csv_delimiter"] = delim.strip()
+    return cfg
+
+
+def _resolve_renta_fields(
+    registro: VentaCF,
+    periodo: str,
+    montos: Dict[str, Decimal] | None,
+    renta_cfg: dict[str, object] | None = None,
+) -> tuple[str, str]:
+    cfg = renta_cfg or _load_renta_config()
     if periodo < "202501":
         return "0", "0"
-    tipo_operacion = str(registro.tipo_operacion or "0").strip() or "0"
-    tipo_ingreso = str(registro.tipo_ingreso or "0").strip() or "0"
-    for valor, campo in ((tipo_operacion, "Tipo de operación"), (tipo_ingreso, "Tipo de ingreso")):
-        if not re.fullmatch(r"\d{1,2}", valor):
-            raise ValueError(
-                f"{campo} inválido (registro de periodo >= 2025-01)."
-            )
+
+    tipo_operacion = str(registro.tipo_operacion or "").strip()
+    tipo_ingreso = str(registro.tipo_ingreso or "").strip()
+
+    if not tipo_operacion:
+        if montos and montos.get("ventas_gravadas_locales", CERO_DECIMAL) > CERO_DECIMAL:
+            tipo_operacion = "1"
+        elif montos:
+            tipo_operacion = "2"
+        else:
+            tipo_operacion = str(cfg.get("tipo_operacion_default") or "").strip()
+
+    if not tipo_ingreso:
+        tipo_ingreso = str(cfg.get("tipo_ingreso_default") or "").strip()
+
+    def _validate(valor: str, campo: str) -> str:
+        texto = valor.strip()
+        if not texto or texto == "0":
+            raise ValueError(f"{campo} requerido para periodo >= 2025-01.")
+        if not re.fullmatch(r"\d{1,2}", texto):
+            raise ValueError(f"{campo} inválido (solo 1-2 dígitos).")
+        return texto
+
+    strict = bool(cfg.get("strict", RENTA_DEFAULT_STRICT))
+    try:
+        tipo_operacion = _validate(tipo_operacion, "Tipo de operación")
+    except ValueError:
+        if strict:
+            raise
+        tipo_operacion = str(cfg.get("tipo_operacion_default") or "1").strip() or "1"
+        tipo_operacion = _validate(tipo_operacion, "Tipo de operación")
+
+    try:
+        tipo_ingreso = _validate(tipo_ingreso, "Tipo de ingreso")
+    except ValueError:
+        if strict:
+            raise
+        tipo_ingreso = str(cfg.get("tipo_ingreso_default") or "3").strip() or "3"
+        tipo_ingreso = _validate(tipo_ingreso, "Tipo de ingreso")
+
     return tipo_operacion, tipo_ingreso
+
+
+def _normalize_renta_fields(registro: VentaCF, periodo: str) -> tuple[str, str]:
+    # Compatibilidad: delega a la nueva resolución con montos opcionales.
+    return _resolve_renta_fields(registro, periodo, None)
+
+
+def _validate_lengths_cf(registro: VentaCF, idx: int, strict: bool = True, renta_cfg: dict[str, object] | None = None) -> None:
+    limits = LENGTH_LIMITS_CF
+    cfg = renta_cfg or _load_renta_config()
+    strict_valid = bool(cfg.get("strict_validations", VALIDATION_STRICT_DEFAULT))
+    if strict_valid is False:
+        strict = False
+
+    def _check(value: str | None, key: str) -> None:
+        if value is None:
+            return
+        texto = str(value).strip()
+        if not texto:
+            return
+        limit = limits.get(key)
+        if limit and len(texto) > limit:
+            msg = f"{key} excede longitud {limit} (registro {idx + 1})"
+            if strict:
+                raise ValueError(msg)
+            else:
+                import logging
+                logging.getLogger(__name__).warning(msg)
+
+    _check(registro.numero_resolucion, "numero_resolucion")
+    _check(registro.serie, "serie")
+    _check(registro.ctrl_interno_del, "ctrl_interno_del")
+    _check(registro.ctrl_interno_al, "ctrl_interno_al")
+    _check(registro.numero_doc_del, "numero_doc_del")
+    _check(registro.numero_doc_al, "numero_doc_al")
+    _check(registro.nro_maquina, "nro_maquina")
+    _check(registro.codigo_generacion, "codigo_generacion")
+    _check(registro.numero_control, "numero_control")
+    _check(registro.tipo_operacion, "tipo_operacion")
+    _check(registro.tipo_ingreso, "tipo_ingreso")
 
 
 def _decimal_to_text(monto: Decimal) -> str:
@@ -311,6 +442,29 @@ def _extract_dte_order(registro: VentaCF, idx: int, fecha: date) -> float:
     return float(idx)
 
 
+def _validate_output_row(fila: list[str], idx: int, periodo: str) -> None:
+    if len(fila) != 23:
+        raise ValueError(f"Fila {idx} incompleta: se esperaban 23 columnas.")
+    clase = fila[1]
+    is_dte = clase == "4"
+    if is_dte:
+        if fila[3] != "N/A" or fila[4] != "N/A" or fila[5] != "N/A" or fila[6] != "N/A":
+            raise ValueError(f"Fila {idx}: para DTE la resolución/serie/control deben ser 'N/A'.")
+        if not fila[7] or not fila[8]:
+            raise ValueError(f"Fila {idx}: debe indicar código de generación DEL y AL.")
+        if fila[9] not in ("", None):
+            raise ValueError(f"Fila {idx}: la máquina registradora debe quedar en blanco para DTE.")
+        if periodo >= "202501":
+            if fila[20] in ("0", "", None) or fila[21] in ("0", "", None):
+                raise ValueError(f"Fila {idx}: Tipo de operación/ingreso requeridos para 2025-01 en adelante.")
+    # Longitud máxima defensiva (evita rechazos por celdas extensas).
+    max_len = 100
+    for col_idx, val in enumerate(fila, start=1):
+        texto = "" if val is None else str(val)
+        if len(texto) > max_len:
+            raise ValueError(f"Fila {idx} columna {col_idx} excede {max_len} caracteres.")
+
+
 def generar_anexo_consumidor_final_files(
     registros: Iterable[VentaCF],
     output_dir: str,
@@ -318,6 +472,8 @@ def generar_anexo_consumidor_final_files(
 ) -> Dict[str, Path]:
     periodo = _validate_periodo(periodo_yyyymm)
     output_path = _validate_output_dir(output_dir)
+    renta_cfg = _load_renta_config()
+    csv_delimiter = renta_cfg.get("csv_delimiter") or DEFAULT_CSV_DELIMITER
 
     registros_list = list(registros)
     if not registros_list:
@@ -357,7 +513,9 @@ def generar_anexo_consumidor_final_files(
             montos,
             contexto=f"registro {idx + 1}",
         )
-        tipo_operacion, tipo_ingreso = _normalize_renta_fields(registro, periodo)
+        tipo_operacion, tipo_ingreso = _resolve_renta_fields(
+            registro, periodo, montos, renta_cfg
+        )
 
         numero_resolucion = (registro.numero_resolucion or "").strip()
         serie = (registro.serie or "").strip()
@@ -415,6 +573,12 @@ def generar_anexo_consumidor_final_files(
                 f"Debe indicar el número de máquina registradora (registro {idx + 1})."
             )
 
+        _validate_lengths_cf(
+            registro,
+            idx,
+            strict=True,
+            renta_cfg=renta_cfg,
+        )
         fila = [
             fecha_text,
             clase,
@@ -443,6 +607,23 @@ def generar_anexo_consumidor_final_files(
         _validar_total_montos(
             group["montos"],
             contexto=f"DTE del {group['fecha_text']} tipo {group['tipo']}",
+        )
+        dummy_reg = VentaCF(
+            fecha=group["fecha_text"],
+            clase="4",
+            tipo=group["tipo"],
+            numero_doc_del=codigo_inicio,
+            numero_doc_al=codigo_fin,
+            tipo_operacion=group["tipo_operacion"],
+            tipo_ingreso=group["tipo_ingreso"],
+            codigo_generacion=codigo_inicio,
+            numero_control=None,
+        )
+        _validate_lengths_cf(
+            dummy_reg,
+            len(filas) + len(dte_groups),
+            strict=True,
+            renta_cfg=renta_cfg,
         )
         fila = [
             group["fecha_text"],
@@ -473,11 +654,13 @@ def generar_anexo_consumidor_final_files(
     with open(csv_path, "w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(
             fh,
-            delimiter=";",
+            delimiter=csv_delimiter,
             lineterminator="\n",
             quoting=csv.QUOTE_MINIMAL,
         )
-        writer.writerows(filas)
+        for idx, fila in enumerate(filas, start=1):
+            _validate_output_row(fila, idx, periodo)
+            writer.writerow(fila)
 
     wb = Workbook()
     ws = wb.active

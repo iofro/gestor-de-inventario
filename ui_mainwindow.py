@@ -14,7 +14,7 @@ import json
 import sys
 import subprocess
 import unicodedata
-from typing import Mapping
+from typing import Any, Mapping
 from pathlib import Path
 import inventory_manager as im
 from paths import (
@@ -2789,6 +2789,40 @@ class MainWindow(QMainWindow):
             logger.exception("Error al enviar factura automáticamente (venta_id=%s)", venta_id, exc_info=exc)
             return False, str(exc), {"rejected": False, "json_path": None, "tipo_dte": tipo_dte}
 
+    def _extract_envio_ident(self, meta: Mapping[str, Any] | None) -> tuple[str | None, str | None]:
+        if not isinstance(meta, Mapping):
+            return None, None
+        resp = meta.get("respuesta")
+        if not isinstance(resp, Mapping):
+            return None, None
+        ident = resp.get("identificacion") or resp.get("identificador") or {}
+        if not isinstance(ident, Mapping):
+            ident = {}
+        codigo = (ident.get("codigoGeneracion") or "").strip().upper() or None
+        sello = (
+            resp.get("sello")
+            or resp.get("selloRecibido")
+            or resp.get("selloRecepcion")
+            or None
+        )
+        if sello:
+            sello = str(sello).strip() or None
+        return codigo, sello
+
+    def _auto_enviar_email_factura(self, venta_id: int, meta: Mapping[str, Any] | None = None) -> None:
+        try:
+            codigo, sello = self._extract_envio_ident(meta)
+            tab = getattr(self, "facturacion_tab", None)
+            if tab and hasattr(tab, "_send_invoice_email"):
+                tab._send_invoice_email(
+                    venta_id,
+                    force_regenerate=False,
+                    expected_codigo=codigo,
+                    expected_sello=sello,
+                )
+        except Exception:
+            logger.exception("No se pudo enviar la factura por correo (venta_id=%s)", venta_id)
+
     def _handle_dte_rechazo(self, venta_id: int, tipo_dte: str, estado: str, meta: dict) -> None:
         """Ofrece editar los datos del cliente en el JSON cuando Hacienda rechaza el DTE."""
         json_path = meta.get("json_path")
@@ -3163,10 +3197,14 @@ class MainWindow(QMainWindow):
                     raise ValueError(f"El producto con id {product_id} ya no existe en inventario. Refresque la lista.")
             if prod.get("stock", 0) < item["cantidad"]:
                 raise ValueError(f"No hay suficiente stock para el producto {prod['nombre']}.")
-            extra_data = item.get("extra") or (
-                {"lote_id": item.get("lote_id"), "producto_id": product_id, "cantidad": item.get("cantidad")}
-                if item.get("lote_id") is not None else None
-            )
+            extra_data = item.get("extra") or {}
+            if extra_data is None:
+                extra_data = {}
+            extra_data.setdefault("lote_id", item.get("lote_id"))
+            extra_data.setdefault("producto_id", product_id)
+            extra_data.setdefault("cantidad", item.get("cantidad"))
+            extra_data["comision_tipo"] = item.get("comision_tipo")
+            extra_data["comision_monto"] = item.get("comision_monto", 0)
             self.manager.db.add_detalle_venta(
                 venta_id,
                 prod["id"],
@@ -3198,6 +3236,7 @@ class MainWindow(QMainWindow):
                 logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
             if envio_ok:
                 self._registrar_estado_dte_ui(venta_id, "01", "enviado")
+                self._auto_enviar_email_factura(venta_id, envio_meta)
                 texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
                 QMessageBox.information(self, "Venta", texto_base)
             else:
@@ -3391,10 +3430,14 @@ class MainWindow(QMainWindow):
                     raise ValueError(f"El producto con id {product_id} ya no existe en inventario. Refresque la lista.")
             if prod.get("stock", 0) < item["cantidad"]:
                 raise ValueError(f"No hay suficiente stock para el producto {prod['nombre']}.")
-            extra_data = item.get("extra") or (
-                {"lote_id": item.get("lote_id"), "producto_id": product_id, "cantidad": item.get("cantidad")}
-                if item.get("lote_id") is not None else None
-            )
+            extra_data = item.get("extra") or {}
+            if extra_data is None:
+                extra_data = {}
+            extra_data.setdefault("lote_id", item.get("lote_id"))
+            extra_data.setdefault("producto_id", product_id)
+            extra_data.setdefault("cantidad", item.get("cantidad"))
+            extra_data["comision_tipo"] = item.get("comision_tipo")
+            extra_data["comision_monto"] = item.get("comision_monto", 0)
             self.manager.db.add_detalle_venta(
                 venta_id,
                 prod["id"],
@@ -3426,6 +3469,7 @@ class MainWindow(QMainWindow):
                 logger.exception("No se pudo generar PDF de factura CF para venta_id=%s", venta_id)
             if envio_ok:
                 self._registrar_estado_dte_ui(venta_id, "03", "enviado")
+                self._auto_enviar_email_factura(venta_id, envio_meta)
                 texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
                 QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
             else:

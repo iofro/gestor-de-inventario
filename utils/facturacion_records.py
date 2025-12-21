@@ -12,7 +12,7 @@ import json
 import os
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Mapping, Sequence
@@ -380,6 +380,40 @@ def _extract_total_from_json(payload: Mapping[str, Any] | None) -> Any:
             return total
 
     return _find_first_non_empty(payload, _TOTAL_FIELD_CANDIDATES)
+
+
+def _parse_fecha_hora(fecha_val: Any, hora_val: Any = None) -> datetime | None:
+    fecha_text = str(fecha_val).strip() if fecha_val is not None else ""
+    hora_text = str(hora_val).strip() if hora_val is not None else ""
+    if not fecha_text:
+        return None
+    candidatos = []
+    if hora_text:
+        candidatos.append(f"{fecha_text}T{hora_text}")
+        candidatos.append(f"{fecha_text} {hora_text}")
+    else:
+        candidatos.append(fecha_text)
+
+    formatos = (
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+    )
+    for candidato in candidatos:
+        for fmt in formatos:
+            try:
+                return datetime.strptime(candidato, fmt)
+            except ValueError:
+                continue
+    try:
+        return datetime.fromisoformat(fecha_text)
+    except Exception:
+        return None
 
 
 def map_envio_state(state: str | None) -> str:
@@ -1109,20 +1143,14 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             )
             hora_ident = ident_data.get("horEmi") or ident_data.get("horaEmision")
             if fecha_ident:
-                try:
-                    parsed_fecha = None
-                    parsed_display = None
-                    if hora_ident:
-                        parsed_fecha = datetime.strptime(
-                            f"{fecha_ident} {hora_ident}", "%Y-%m-%d %H:%M:%S"
-                        )
-                        parsed_display = parsed_fecha.strftime("%Y-%m-%d %H:%M")
-                    else:
-                        parsed_fecha = datetime.strptime(str(fecha_ident), "%Y-%m-%d")
-                        parsed_display = parsed_fecha.strftime("%Y-%m-%d")
-                except Exception:
-                    parsed_fecha = None
-                    parsed_display = None
+                parsed_fecha = _parse_fecha_hora(fecha_ident, hora_ident)
+                parsed_display = None
+                if parsed_fecha:
+                    parsed_display = (
+                        parsed_fecha.strftime("%Y-%m-%d %H:%M")
+                        if parsed_fecha.time() != time.min
+                        else parsed_fecha.strftime("%Y-%m-%d")
+                    )
                 if parsed_fecha and (prefer_json_timestamp or not fdate):
                     fdate = parsed_fecha
                     fecha_str = parsed_display or fecha_str
@@ -1155,17 +1183,15 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                         json_data,
                         ("horEmi", "horaEmision", "hora"),
                     )
-                    try:
-                        if hora_hint:
-                            parsed_fecha = datetime.strptime(
-                                f"{fecha_hint} {hora_hint}", "%Y-%m-%d %H:%M:%S"
-                            )
-                            fecha_str = parsed_fecha.strftime("%Y-%m-%d %H:%M")
-                        else:
-                            parsed_fecha = datetime.strptime(str(fecha_hint), "%Y-%m-%d")
-                            fecha_str = parsed_fecha.strftime("%Y-%m-%d")
+                    parsed_fecha = _parse_fecha_hora(fecha_hint, hora_hint)
+                    if parsed_fecha:
+                        fecha_str = (
+                            parsed_fecha.strftime("%Y-%m-%d %H:%M")
+                            if parsed_fecha.time() != time.min
+                            else parsed_fecha.strftime("%Y-%m-%d")
+                        )
                         fdate = parsed_fecha
-                    except Exception:
+                    else:
                         fdate = None
 
         if isinstance(extra_data, Mapping):

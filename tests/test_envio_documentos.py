@@ -1653,6 +1653,14 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert res["estado"] == "Transmitido"
     row = db.cursor.execute("SELECT estado FROM dte_envios WHERE venta_id=?", (venta_id,)).fetchone()
     assert row["estado"] == "Transmitido"
+    envio_row = db.cursor.execute(
+        "SELECT estado_ui, estado_ui_tag, estado_ui_manual FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        (venta_id,),
+    ).fetchone()
+    assert envio_row["estado_ui"] == "Anulado"
+    assert envio_row["estado_ui_manual"] == 1
+    venta_row = db.get_venta_by_id(venta_id)
+    assert venta_row["estado"] == "Anulada"
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
@@ -2064,4 +2072,3 @@ def test_enviar_nota_remision_propagates_production_ambiente(monkeypatch, tmp_pa
 
     assert captured.get("ambiente_param") == "01"
     assert sent_payload["payload"]["identificacion"]["ambiente"] == "01"
-

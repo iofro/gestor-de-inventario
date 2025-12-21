@@ -17,11 +17,13 @@ from openpyxl.utils import get_column_letter
 from declaracion.anexo_consumidor_final import (
     _decimal_to_text,
     _normalize_decimal,
-    _normalize_renta_fields,
+    _resolve_renta_fields,
     _parse_fecha,
     _validate_output_dir,
     _validate_periodo,
 )
+from declaracion.anexo_consumidor_final import _load_renta_config as _load_renta_cfg_cf  # reuse config
+from declaracion.anexo_consumidor_final import VALIDATION_STRICT_DEFAULT
 
 __all__ = [
     "HEADERS",
@@ -64,6 +66,16 @@ MONTO_FIELDS = (
     "debito_terceros",
     "total_ventas",
 )
+
+LENGTH_LIMITS_CONTRIB = {
+    "numero_control": 40,
+    "codigo_generacion": 40,
+    "identificacion": 14,
+    "dui": 9,
+    "nombre_cliente": 100,
+    "tipo_operacion": 2,
+    "tipo_ingreso": 2,
+}
 
 
 @dataclass
@@ -124,6 +136,36 @@ def _autoajustar_columnas(ws) -> None:
             cell.number_format = "@"
 
 
+def _validate_lengths_contrib(registro: VentaContribuyente, idx: int, strict: bool = True) -> None:
+    limits = LENGTH_LIMITS_CONTRIB
+    cfg = _load_renta_cfg_cf()
+    strict_valid = bool(cfg.get("strict_validations", VALIDATION_STRICT_DEFAULT))
+    if strict_valid is False:
+        strict = False
+
+    def _check(value: str | None, key: str) -> None:
+        if not value:
+            return
+        texto = str(value).strip()
+        if not texto:
+            return
+        limit = limits.get(key)
+        if limit and len(texto) > limit:
+            msg = f"{key} excede longitud {limit} (registro {idx + 1})"
+            if strict:
+                raise ValueError(msg)
+            else:
+                import logging
+                logging.getLogger(__name__).warning(msg)
+
+    _check(registro.numero_control, "numero_control")
+    _check(registro.codigo_generacion, "codigo_generacion")
+    _check(registro.identificacion, "identificacion")
+    _check(registro.dui, "dui")
+    _check(registro.nombre_cliente, "nombre_cliente")
+    _check(registro.tipo_operacion, "tipo_operacion")
+    _check(registro.tipo_ingreso, "tipo_ingreso")
+
 def generar_anexo_contribuyentes_files(
     registros: Iterable[VentaContribuyente],
     output_dir: str | Path,
@@ -167,7 +209,7 @@ def generar_anexo_contribuyentes_files(
             montos[campo] = _normalize_decimal(valor, campo, idx, False)
         _validar_montos(montos, idx)
 
-        tipo_operacion, tipo_ingreso = _normalize_renta_fields(registro, periodo)
+        tipo_operacion, tipo_ingreso = _resolve_renta_fields(registro, periodo, None)
 
         numero_control = _limpiar_guiones(str(registro.numero_control or "").strip())
         codigo_generacion = _limpiar_guiones(
@@ -193,6 +235,7 @@ def generar_anexo_contribuyentes_files(
                 f"Número de control/código de generación faltante para la columna F"
                 f" (registro {idx + 1})."
             )
+        _validate_lengths_contrib(registro, idx, strict=True)
 
         identificacion = str(registro.identificacion or "").strip()
         identificacion = _normalizar_identificacion(identificacion) if identificacion else ""

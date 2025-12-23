@@ -299,3 +299,78 @@ def test_campos_renta_por_periodo(tmp_path):
     )[0]
     assert row_post[20] == "5"
     assert row_post[21] == "9"
+
+
+def test_renta_defaults_y_estricto(tmp_path, monkeypatch):
+    registro = VentaCF(
+        fecha="11/01/2025",
+        clase="4",
+        tipo="01",
+        numero_doc_del="A",
+        numero_doc_al="A",
+        ventas_gravadas_locales="10.00",
+        total_ventas="10.00",
+        tipo_operacion="",
+        tipo_ingreso="",
+    )
+
+    # Sin configuración estricta aplica defaults (1/3) y no 0.
+    row = _read_csv(
+        generar_anexo_consumidor_final_files([registro], tmp_path, "202501")["csv"]
+    )[0]
+    assert row[20] == "1"
+    assert row[21] == "3"
+
+    # Con strict=True falla si no se proporcionan valores válidos.
+    monkeypatch.setattr(
+        "declaracion.anexo_consumidor_final._load_renta_config",
+        lambda: {
+            "tipo_operacion_default": "1",
+            "tipo_ingreso_default": "3",
+            "strict": True,
+            "csv_delimiter": ";",
+        },
+    )
+    with pytest.raises(ValueError):
+        generar_anexo_consumidor_final_files([registro], tmp_path, "202501")
+
+
+def test_rangos_por_hora(tmp_path):
+    registros = [
+        VentaCF(
+            fecha="20/02/2025",
+            clase="4",
+            tipo="01",
+            numero_doc_del="DOC-3",
+            numero_doc_al="DOC-3",
+            ventas_gravadas_locales="1.00",
+            total_ventas="1.00",
+        ),
+        VentaCF(
+            fecha="20/02/2025",
+            clase="4",
+            tipo="01",
+            numero_doc_del="DOC-1",
+            numero_doc_al="DOC-1",
+            ventas_gravadas_locales="2.00",
+            total_ventas="2.00",
+        ),
+        VentaCF(
+            fecha="20/02/2025",
+            clase="4",
+            tipo="01",
+            numero_doc_del="DOC-2",
+            numero_doc_al="DOC-2",
+            ventas_gravadas_locales="3.00",
+            total_ventas="3.00",
+        ),
+    ]
+    registros[0].hora_emision = "12:00"
+    registros[1].hora_emision = "08:00"
+    registros[2].hora_emision = "10:30"
+
+    row = _read_csv(
+        generar_anexo_consumidor_final_files(registros, tmp_path, "202502")["csv"]
+    )[0]
+    assert row[7] == "DOC-1"
+    assert row[8] == "DOC-3"

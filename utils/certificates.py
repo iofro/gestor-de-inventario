@@ -222,12 +222,10 @@ def _path_is_relative_to(path: Path, other: Path) -> bool:
 
 
 def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
-    """Copy ``source`` into the signer directory preserving its original name.
-
+    """Copy ``source`` into the signer directory as ``<nit>.crt``.
 
     Any other certificate present in the directory is removed so that only the
-    newly uploaded file remains.
-
+    active file remains.
     """
 
     if not nit:
@@ -236,15 +234,30 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
     source_path = Path(source).expanduser().resolve()
     if not source_path.is_file():
         raise FileNotFoundError(f"Certificado origen no encontrado: {source_path}")
+    try:
+        with source_path.open("rb") as fh:
+            head = fh.read(4096)
+        head_text = head.decode("utf-8", errors="ignore").lstrip()
+    except OSError as exc:
+        raise RuntimeError(f"No se pudo leer certificado: {exc}") from exc
+    if not head_text.startswith("<") or "CertificadoMH" not in head_text:
+        raise ValueError(
+            "El archivo seleccionado no parece ser un certificado XML válido "
+            "(debe contener <CertificadoMH>)."
+        )
     dest_dir = resolve_signer_cert_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    dest_path = dest_dir / source_path.name
     canonical_path = dest_dir / f"{nit}{_CERT_EXT}"
 
     temp_path: Path | None = None
     copy_source = source_path
-    if _path_is_relative_to(source_path, dest_dir):
+    try:
+        same_destination = source_path.resolve() == canonical_path.resolve()
+    except OSError:
+        same_destination = False
+
+    if not same_destination and _path_is_relative_to(source_path, dest_dir):
         temp_path = dest_dir / f".tmp_{nit}"
         shutil.copy2(source_path, temp_path)
         copy_source = temp_path
@@ -252,12 +265,17 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
     if temp_path is not None:
         skip_resolved = {temp_path, temp_path.resolve()}
     else:
-        skip_resolved = {source_path, source_path.resolve()}
+        skip_resolved = set()
+
+    try:
+        canonical_resolved = canonical_path.resolve()
+    except OSError:
+        canonical_resolved = canonical_path
+    skip_resolved.add(canonical_path)
+    skip_resolved.add(canonical_resolved)
 
     for existing in dest_dir.iterdir():
         if existing.suffix.lower() != ".crt":
-            continue
-        if existing.name in {dest_path.name, canonical_path.name}:
             continue
         try:
             existing_resolved = existing.resolve()
@@ -270,13 +288,7 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
         except OSError as exc:
             logger.warning("CERT.ERROR: no se pudo eliminar %s: %s", existing, exc)
 
-    shutil.copy2(copy_source, dest_path)
-
-    if canonical_path != dest_path and canonical_path.exists():
-        try:
-            canonical_path.unlink()
-        except OSError:
-            pass
+    shutil.copy2(copy_source, canonical_path)
 
     if temp_path is not None:
         try:
@@ -285,14 +297,14 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
             pass
 
     try:
-        dest_path.chmod(0o644)
+        canonical_path.chmod(0o644)
     except OSError:
         pass
 
-    if not dest_path.is_file():
-        raise FileNotFoundError(f"No se pudo copiar certificado a {dest_path}")
+    if not canonical_path.is_file():
+        raise FileNotFoundError(f"No se pudo copiar certificado a {canonical_path}")
 
-    return dest_path
+    return canonical_path
 
 
 def verify_certificate_setup(
@@ -309,9 +321,12 @@ def verify_certificate_setup(
         effective_dir / f"{normalised_nit}{_CERT_EXT}" if normalised_nit else None
     )
     actual_cert_path: Path | None = None
+    missing_expected = False
     if configured_cert_path and configured_cert_path.is_file():
         actual_cert_path = configured_cert_path
     else:
+        if configured_cert_path is not None:
+            missing_expected = True
         candidates = sorted(p for p in effective_dir.glob(f"*{_CERT_EXT}") if p.is_file())
         if len(candidates) == 1:
             actual_cert_path = candidates[0]
@@ -334,9 +349,12 @@ def verify_certificate_setup(
     if normalised_nit and signer_dir and effective_dir != signer_dir:
         errors.append("dir_mismatch")
 
-    if not cert_exists:
+    if missing_expected:
         errors.append("missing_file")
-    else:
+    elif not cert_exists:
+        errors.append("missing_file")
+
+    if cert_exists:
         if parse_error:
             errors.append("parse_error")
         if normalised_nit and nit_crt and normalised_nit != nit_crt:

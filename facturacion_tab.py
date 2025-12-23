@@ -134,6 +134,7 @@ from utils.facturacion_records import (
     _extract_total_from_json as _facturacion_extract_total,
     _coerce_total as _facturacion_coerce_total,
 )
+from paths import user_data_path
 from evento_contingencia import (
     collect_contingencia_dtes,
     make_event_filename,
@@ -2324,6 +2325,7 @@ class FacturacionTab(QWidget):
         output_container = QWidget()
         output_layout = QHBoxLayout(output_container)
         output_layout.setContentsMargins(0, 0, 0, 0)
+        self._declaracion_config_path = user_data_path("declaracion_config.json")
         self.declaracion_output_dir_edit = QLineEdit()
         self.declaracion_output_dir_edit.setPlaceholderText("Selecciona la carpeta de salida")
         output_layout.addWidget(self.declaracion_output_dir_edit)
@@ -2331,6 +2333,7 @@ class FacturacionTab(QWidget):
         browse_btn.clicked.connect(self._browse_declaracion_output_dir)
         output_layout.addWidget(browse_btn)
         form_layout.addRow("Carpeta de salida:", output_container)
+        self._load_declaracion_output_dir()
 
         layout.addLayout(form_layout)
 
@@ -2407,6 +2410,35 @@ class FacturacionTab(QWidget):
         )
         if directory:
             self.declaracion_output_dir_edit.setText(directory)
+            self._save_declaracion_output_dir(directory)
+
+    def _load_declaracion_output_dir(self) -> None:
+        path = getattr(self, "_declaracion_config_path", None)
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except FileNotFoundError:
+            return
+        except Exception:
+            logger.exception("No se pudo leer configuración de declaración")
+            return
+        if isinstance(data, dict):
+            output_dir = data.get("output_dir")
+            if isinstance(output_dir, str) and output_dir.strip():
+                self.declaracion_output_dir_edit.setText(output_dir.strip())
+
+    def _save_declaracion_output_dir(self, output_dir: str) -> None:
+        path = getattr(self, "_declaracion_config_path", None)
+        if not path or not output_dir:
+            return
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"output_dir": output_dir}, fh, ensure_ascii=False, indent=2)
+        except Exception:
+            logger.exception("No se pudo guardar carpeta de salida de declaración")
 
     def _obtener_periodo_declaracion(self, titulo: str) -> str | None:
         anio = self.declaracion_anio_input.text().strip()
@@ -2422,6 +2454,7 @@ class FacturacionTab(QWidget):
         if not output_dir:
             QMessageBox.warning(self, titulo, "Seleccione la carpeta de salida.")
             return None
+        self._save_declaracion_output_dir(output_dir)
 
         periodo = self._obtener_periodo_declaracion(titulo)
         if not periodo:
@@ -2529,8 +2562,9 @@ class FacturacionTab(QWidget):
             "✔",
             "Fecha",
             "Tipo",
-            "Código (Generación)",
-            "N° Control",
+            "Código (Del–Al)",
+            "Docs",
+            "Hora",
             "Total (T)",
             "Estado",
             "Envio",
@@ -2546,7 +2580,7 @@ class FacturacionTab(QWidget):
             checkbox.setData(Qt.UserRole, registro)
             self.declaracion_table.setItem(row, 0, checkbox)
 
-            fecha = getattr(registro, "fecha", "") or ""
+            fecha = getattr(registro, "fecha_display", None) or getattr(registro, "fecha", "") or ""
             self.declaracion_table.setItem(row, 1, self._create_table_item(str(fecha)))
 
             tipo = getattr(registro, "tipo", "") or ""
@@ -2556,24 +2590,35 @@ class FacturacionTab(QWidget):
                 tipo_item.setToolTip(f"Código: {tipo_tip}")
             self.declaracion_table.setItem(row, 2, tipo_item)
 
-            codigo = getattr(registro, "numero_doc_del", None) or getattr(
-                registro, "codigo_generacion", ""
-            )
-            self.declaracion_table.setItem(row, 3, self._create_table_item(str(codigo)))
+            codigo_del = getattr(registro, "numero_doc_del", None)
+            codigo_al = getattr(registro, "numero_doc_al", None)
+            if codigo_del and codigo_al and codigo_del != codigo_al:
+                codigo_display = f"{codigo_del} … {codigo_al}"
+            else:
+                codigo_display = codigo_del or codigo_al or ""
+            self.declaracion_table.setItem(row, 3, self._create_table_item(str(codigo_display)))
 
-            numero_control = getattr(registro, "numero_control", "") or ""
-            self.declaracion_table.setItem(
-                row, 4, self._create_table_item(str(numero_control))
-            )
+            doc_count = getattr(registro, "doc_count", None)
+            if doc_count is None:
+                doc_count = 1
+            self.declaracion_table.setItem(row, 4, self._create_table_item(str(doc_count)))
+
+            hora_ini = getattr(registro, "hora_inicio", None)
+            hora_fin = getattr(registro, "hora_fin", None)
+            if hora_ini and hora_fin and hora_ini != hora_fin:
+                hora_display = f"{hora_ini}–{hora_fin}"
+            else:
+                hora_display = hora_ini or hora_fin or ""
+            self.declaracion_table.setItem(row, 5, self._create_table_item(str(hora_display)))
 
             total = getattr(registro, "total_ventas", "0.00") or "0.00"
-            self.declaracion_table.setItem(row, 5, self._create_table_item(str(total)))
+            self.declaracion_table.setItem(row, 6, self._create_table_item(str(total)))
 
             estado_texto, estado_tip = self._estado_documento_texto(registro)
             estado_item = self._create_table_item(estado_texto)
             if estado_tip:
                 estado_item.setToolTip(f"Fuente: {estado_tip}")
-            self.declaracion_table.setItem(row, 6, estado_item)
+            self.declaracion_table.setItem(row, 7, estado_item)
 
             envio_texto, envio_tip = self._estado_envio_texto(registro)
             envio_item = self._create_table_item(envio_texto)
@@ -2586,7 +2631,7 @@ class FacturacionTab(QWidget):
                 envio_font = envio_item.font()
                 envio_font.setBold(True)
                 envio_item.setFont(envio_font)
-            self.declaracion_table.setItem(row, 7, envio_item)
+            self.declaracion_table.setItem(row, 8, envio_item)
 
         self.declaracion_generar_planilla_btn.setEnabled(bool(registros))
         self.declaracion_table.resizeRowsToContents()
@@ -2617,7 +2662,11 @@ class FacturacionTab(QWidget):
             checkbox.setData(Qt.UserRole, registro)
             self.declaracion_table.setItem(row, 0, checkbox)
 
-            fecha = getattr(registro, "fecha_emision", "") or ""
+            fecha = (
+                getattr(registro, "fecha_display", None)
+                or getattr(registro, "fecha_emision", "")
+                or ""
+            )
             self.declaracion_table.setItem(row, 1, self._create_table_item(str(fecha)))
 
             tipo = getattr(registro, "tipo", "") or ""
@@ -2728,6 +2777,7 @@ class FacturacionTab(QWidget):
         if not periodo:
             return
 
+        logger.info("Declaración> Contribuyentes: solicitando registros para periodo=%s", periodo)
         try:
             registros = self._fetch_declaracion_registros(
                 "get_anexo_contribuyentes_registros", periodo
@@ -2747,6 +2797,20 @@ class FacturacionTab(QWidget):
             return
 
         self._populate_table_contribuyentes(registros)
+        logger.info("Declaración> Contribuyentes: registros recibidos=%s", len(registros))
+        for idx, reg in enumerate(registros[:5]):
+            logger.debug(
+                "Declaración> Contribuyentes fila=%s fecha=%s fecha_display=%s hora=%s tipo=%s codigo=%s control=%s estado=%s fuente=%s",
+                idx,
+                getattr(reg, "fecha_emision", None),
+                getattr(reg, "fecha_display", None),
+                getattr(reg, "hora_emision", None),
+                getattr(reg, "tipo", None),
+                getattr(reg, "codigo_generacion", None),
+                getattr(reg, "numero_control", None),
+                getattr(reg, "estado", None),
+                getattr(reg, "estado_fuente", None),
+            )
         self.declaracion_result_box.setPlainText(
             f"{len(registros)} DTE listos para generar el Anexo I."
         )
@@ -2756,6 +2820,7 @@ class FacturacionTab(QWidget):
         if not periodo:
             return
 
+        logger.info("Declaración> Consumidor final: solicitando registros para periodo=%s", periodo)
         try:
             registros = self._fetch_declaracion_registros(
                 "get_anexo_consumidor_final_registros", periodo
@@ -2775,6 +2840,20 @@ class FacturacionTab(QWidget):
             return
 
         self._populate_table_cf(registros)
+        logger.info("Declaración> Consumidor final: registros recibidos=%s", len(registros))
+        for idx, reg in enumerate(registros[:5]):
+            logger.debug(
+                "Declaración> CF fila=%s fecha=%s fecha_display=%s hora=%s tipo=%s ultimo_codigo=%s ultimo_control=%s estado=%s fuente=%s",
+                idx,
+                getattr(reg, "fecha", None),
+                getattr(reg, "fecha_display", None),
+                getattr(reg, "hora_emision", None),
+                getattr(reg, "tipo", None),
+                getattr(reg, "codigo_generacion", None),
+                getattr(reg, "numero_control", None),
+                getattr(reg, "estado", None),
+                getattr(reg, "estado_fuente", None),
+            )
         resumen = self._cf_tipo_resumen(registros)
         mensaje = f"{len(registros)} DTE listos para generar el Anexo II."
         if resumen:
@@ -2782,10 +2861,43 @@ class FacturacionTab(QWidget):
         self.declaracion_result_box.setPlainText(mensaje)
 
     def _handle_cargar_xix(self):
-        self._clear_declaracion_table()
-        mensaje = "La previsualización de Anexo XIX está pendiente."
-        self.declaracion_result_box.setPlainText(mensaje)
-        QMessageBox.information(self, "Anexo XIX", mensaje)
+        periodo = self._obtener_periodo_declaracion("Anexo XIX")
+        if not periodo:
+            return
+
+        logger.info("Declaración> Anexo XIX: solicitando registros para periodo=%s", periodo)
+        try:
+            registros = self._fetch_declaracion_registros(
+                "get_anexo_xix_registros", periodo
+            )
+        except Exception as exc:  # pragma: no cover - errores del proveedor
+            mensaje = f"No se pudo obtener la lista de anulaciones: {exc}"
+            self._clear_declaracion_table()
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.warning(self, "Anexo XIX", mensaje)
+            return
+
+        if not registros:
+            self._clear_declaracion_table()
+            mensaje = "No hay anulaciones para este período."
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.information(self, "Anexo XIX", mensaje)
+            return
+
+        self._populate_table_xix(registros)
+        logger.info("Declaración> Anexo XIX: registros recibidos=%s", len(registros))
+        for idx, reg in enumerate(registros[:5]):
+            logger.debug(
+                "Declaración> XIX fila=%s tipo=%s codigo=%s control=%s estado=%s",
+                idx,
+                getattr(reg, "tipo_documento", None),
+                getattr(reg, "codigo_generacion", None),
+                getattr(reg, "numero_control", None),
+                getattr(reg, "estado", None),
+            )
+        self.declaracion_result_box.setPlainText(
+            f"{len(registros)} anulaciones listas para generar el Anexo XIX."
+        )
 
     def _handle_generar_planilla(self):
         registros = self._selected_registros_from_table()
@@ -4810,6 +4922,22 @@ class FacturacionTab(QWidget):
                 except RuntimeError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     exc_message = str(exc)
+                    if "CERT_INVALID" in exc_message:
+                        detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                        QMessageBox.critical(
+                            self,
+                            "Firma",
+                            f"Error de firma: certificado inválido. {detalle}",
+                        )
+                        return
+                    if "CERT_NOT_FOUND" in exc_message:
+                        detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                        QMessageBox.critical(
+                            self,
+                            "Firma",
+                            f"Error de firma: {detalle}",
+                        )
+                        return
                     if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
                         QMessageBox.critical(
                             self,
@@ -4936,6 +5064,22 @@ class FacturacionTab(QWidget):
                 except RuntimeError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     exc_message = str(exc)
+                    if "CERT_INVALID" in exc_message:
+                        detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                        QMessageBox.critical(
+                            self,
+                            "Firma",
+                            f"Error de firma: certificado inválido. {detalle}",
+                        )
+                        return
+                    if "CERT_NOT_FOUND" in exc_message:
+                        detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                        QMessageBox.critical(
+                            self,
+                            "Firma",
+                            f"Error de firma: {detalle}",
+                        )
+                        return
                     if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
                         QMessageBox.critical(
                             self,
@@ -6264,6 +6408,49 @@ class FacturacionTab(QWidget):
         if estado.lower() != "rechazado":
             if venta_id:
                 self.manager.db.update_venta_estado(venta_id, "Anulada")
+            try:
+                updated = self.manager.db.update_envio_estado_ui(
+                    venta_id=venta_id,
+                    numero_control=numero_control_ident,
+                    codigo_generacion=codigo_gen_ident,
+                    estado_ui="Anulado",
+                    estado_ui_tag="anulacion",
+                )
+                if not updated:
+                    try:
+                        self.manager.db.registrar_envio_dte(
+                            venta_id,
+                            "evento",
+                            "Anulado",
+                            "",
+                            respuesta_json={"estado": "Anulado"},
+                            codigo_generacion=codigo_gen_ident,
+                            numero_control=numero_control_ident,
+                        )
+                        updated = self.manager.db.update_envio_estado_ui(
+                            venta_id=venta_id,
+                            numero_control=numero_control_ident,
+                            codigo_generacion=codigo_gen_ident,
+                            estado_ui="Anulado",
+                            estado_ui_tag="anulacion",
+                        )
+                    except Exception:
+                        logger.exception("No se pudo registrar estado de anulación en dte_envios")
+                if updated:
+                    logger.info(
+                        "FACTURACION.ANULACION estado_ui actualizado venta_id=%s numero_control=%s codigo_generacion=%s",
+                        venta_id,
+                        numero_control_ident,
+                        codigo_gen_ident,
+                    )
+                else:
+                    logger.warning(
+                        "FACTURACION.ANULACION no se pudo actualizar estado_ui para venta_id=%s numero_control=%s",
+                        venta_id,
+                        numero_control_ident,
+                    )
+            except Exception:
+                logger.exception("Error al actualizar estado_ui a Anulado tras anulación")
             QMessageBox.information(self, "Anular DTE", "Anulación enviada correctamente")
             self.refresh_and_reload()
         else:

@@ -3,14 +3,14 @@
 from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import datetime, date, time
 from pathlib import Path
 import json
 import logging
 import os
 import re
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from declaracion.anexo_contribuyentes import VentaContribuyente
 from declaracion.anexo_consumidor_final import VentaCF
@@ -228,6 +228,7 @@ EXCLUSION_MOTIVOS = (
     "anulado",
     "correlativo_duplicado",
     "fuera_de_periodo",
+    "campos_invalidos",
 )
 
 
@@ -273,6 +274,173 @@ def _row_fecha_text(row: dict) -> str | None:
             return f"{texto[:4]}-{texto[4:6]}-{texto[6:]}"
         return texto
     return None
+
+
+def _normalize_hora_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        texto = str(value).strip()
+    except Exception:
+        return None
+    if not texto:
+        return None
+    texto = texto.replace("T", " ")
+    if " " in texto:
+        partes = [p for p in texto.split() if ":" in p] or texto.split()
+        texto = partes[-1]
+    match = re.match(r"^(\d{1,2}):(\d{2})", texto)
+    if match:
+        try:
+            hora = int(match.group(1))
+            minutos = match.group(2)
+            return f"{hora:02d}:{minutos}"
+        except Exception:
+            return None
+    if texto.isdigit() and len(texto) in (3, 4):
+        try:
+            horas = int(texto[:-2])
+            mins = int(texto[-2:])
+            return f"{horas:02d}:{mins:02d}"
+        except Exception:
+            return None
+    return None
+
+
+def _extract_hora_from_payload(payload: Any) -> str | None:
+    if not isinstance(payload, Mapping):
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return None
+            if not isinstance(payload, Mapping):
+                return None
+        else:
+            return None
+
+    stack: list[Mapping[str, Any]] = [payload]
+    seen: set[int] = set()
+    keys = {"horemi", "horaemision", "hora_emision"}
+
+    while stack:
+        current = stack.pop()
+        obj_id = id(current)
+        if obj_id in seen:
+            continue
+        seen.add(obj_id)
+        for key, value in current.items():
+            lowered = str(key).strip().lower()
+            if lowered in keys and value:
+                hora = _normalize_hora_text(value)
+                if hora:
+                    return hora
+            if isinstance(value, Mapping):
+                stack.append(value)
+    return None
+
+
+def _row_hora_text(row: dict) -> str | None:
+    ident = row.get("dte_json", {}).get("identificacion") if isinstance(row.get("dte_json"), dict) else {}
+    extra = row.get("extra_data") or {}
+    candidates = [
+        (ident or {}).get("horEmi"),
+        row.get("horEmi"),
+        extra.get("horEmi") if isinstance(extra, dict) else None,
+        extra.get("horaEmision") if isinstance(extra, dict) else None,
+        row.get("hora_emision"),
+    ]
+    envio = row.get("envio")
+    if isinstance(envio, Mapping):
+        resp = envio.get("respuesta_json") or envio.get("respuesta")
+        hora_envio = _extract_hora_from_payload(resp)
+        candidates.append(hora_envio)
+    extra_resp = (extra or {}).get("respuesta") if isinstance(extra, Mapping) else None
+    hora_extra = _extract_hora_from_payload(extra_resp)
+    candidates.append(hora_extra)
+    for candidate in candidates:
+        hora = _normalize_hora_text(candidate)
+        if hora:
+            return hora
+    return None
+
+
+def _row_fecha_display(row: dict) -> str:
+    fecha_obj = row.get("fecha_obj")
+    hora_text = _row_hora_text(row)
+    if isinstance(fecha_obj, datetime):
+        base = fecha_obj.strftime("%Y-%m-%d")
+        if fecha_obj.hour or fecha_obj.minute or fecha_obj.second:
+            return f"{base} {fecha_obj.strftime('%H:%M')}"
+        hora_norm = hora_text
+        if hora_norm:
+            return f"{base} {hora_norm}"
+        return base
+
+    base_fecha = _row_fecha_text(row) or ""
+    if not base_fecha:
+        return ""
+
+    if not hora_text:
+        fec_raw = row.get("fecEmi")
+        if isinstance(fec_raw, str) and (" " in fec_raw or "T" in fec_raw):
+            maybe_time = fec_raw.replace("T", " ").split(" ", 1)
+            if len(maybe_time) > 1:
+                hora_text = _normalize_hora_text(maybe_time[1])
+
+    hora_norm = _normalize_hora_text(hora_text)
+    if hora_norm:
+        # Evita duplicar si la fecha ya trae hora
+        if " " in base_fecha:
+            return base_fecha
+        return f"{base_fecha} {hora_norm}"
+    return base_fecha
+
+
+def _fecha_hora_for_order(row: dict, fecha_obj: datetime | None, hora_text: str | None) -> datetime | None:
+    if isinstance(fecha_obj, datetime):
+        if fecha_obj.hour or fecha_obj.minute or fecha_obj.second:
+            return fecha_obj
+        fecha_base = fecha_obj.date()
+    else:
+        parsed = _parse_fecha(row.get("fecEmi"))
+        if not parsed:
+            return None
+        fecha_base = parsed.date()
+
+    if hora_text:
+        for fmt in ("%H:%M:%S", "%H:%M"):
+            try:
+                hora_val = datetime.strptime(hora_text, fmt).time()
+                return datetime.combine(fecha_base, hora_val)
+            except ValueError:
+                continue
+    return datetime.combine(fecha_base, time.min)
+
+
+def _format_fecha_hora_preview(fecha_obj: datetime | None, row: dict) -> str:
+    """Devuelve fecha DD/MM/YYYY con hora:min si existe, para la UI de declaración."""
+
+    base_fecha = None
+    if isinstance(fecha_obj, datetime):
+        base_fecha = fecha_obj.strftime("%d/%m/%Y")
+    else:
+        raw_fecha = _row_fecha_text(row)
+        if raw_fecha:
+            try:
+                parsed = _parse_fecha(raw_fecha)
+                base_fecha = parsed.strftime("%d/%m/%Y") if parsed else None
+            except Exception:
+                base_fecha = None
+            if base_fecha is None:
+                base_fecha = raw_fecha
+
+    hora_text = _row_hora_text(row)
+    if hora_text:
+        if base_fecha:
+            return f"{base_fecha} {hora_text}"
+        return hora_text
+    return base_fecha or ""
 
 
 def _cliente_nombre(row: dict) -> str:
@@ -799,6 +967,36 @@ def _log_summary(
         )
 
 
+def _log_preview_rows(rows: list[dict], label: str, limit: int = 50) -> None:
+    """Registrar los datos básicos de las filas consideradas para anexos."""
+
+    try:
+        logger.info("%s: filas=%s", label, len(rows))
+        for idx, row in enumerate(rows[:limit]):
+            codigo = row.get("codigo_generacion") or row.get("codigo")
+            numero = row.get("numero_control")
+            tipo = row.get("tipo")
+            fecha_display = row.get("fecha_display") or _row_fecha_display(row)
+            hora = _row_hora_text(row) or row.get("horEmi")
+            estado = row.get("estado_envio") or row.get("envio")
+            fuente = row.get("estado_fuente")
+            logger.info(
+                "%s [%s] tipo=%s fecha=%s hora=%s codigo=%s numero=%s estado=%s fuente=%s json=%s",
+                label,
+                idx + 1,
+                tipo,
+                fecha_display,
+                hora,
+                codigo,
+                numero,
+                estado,
+                fuente,
+                row.get("json_path") or row.get("json"),
+            )
+    except Exception:
+        logger.exception("No se pudieron registrar filas para %s", label)
+
+
 def get_facturacion_rows(db, periodo_yyyymm: str) -> list[dict]:
     """Compatibilidad: devuelve únicamente las filas de facturación."""
 
@@ -1144,7 +1342,7 @@ def _build_preview_row_anexo_i(
     row: dict, codigo: str, base: str | None, manual: str | None
 ) -> PreviewRow:
     fecha_obj = row.get("fecha_obj") if isinstance(row.get("fecha_obj"), datetime) else None
-    fecha_texto = _row_fecha_text(row) or ""
+    fecha_texto = _row_fecha_display(row)
     numero_control = row.get("numero_control")
     if numero_control:
         numero_control = str(numero_control).strip() or None
@@ -1195,7 +1393,7 @@ def _build_preview_row_anexo_ii(
     row: dict, codigo: str, base: str | None, manual: str | None
 ) -> PreviewRow:
     fecha_obj = row.get("fecha_obj") if isinstance(row.get("fecha_obj"), datetime) else None
-    fecha_texto = _row_fecha_text(row) or ""
+    fecha_texto = _row_fecha_display(row)
     numero_control = row.get("numero_control")
     if numero_control:
         numero_control = str(numero_control).strip() or None
@@ -1330,6 +1528,7 @@ def build_anexo_ii_preview(dataset: FacturacionDataset) -> AnexoPreviewData:
 def get_declaracion_preview(db, periodo_yyyymm: str) -> DeclaracionPreview:
     dataset = collect_facturacion_dataset(db, periodo_yyyymm)
     periodo = _validate_periodo(periodo_yyyymm)
+    _log_preview_rows(dataset.rows, f"Declaración dataset {periodo}")
     return DeclaracionPreview(
         periodo=periodo,
         anexo_i=build_anexo_i_preview(dataset),
@@ -1379,26 +1578,38 @@ def build_anexo_i_contribuyentes(rows: list[dict], db) -> list[VentaContribuyent
             motivos["sin_fecha"].append(f"{codigo}")
             continue
 
+        hora_text = _row_hora_text(row)
+        fecha_display = _format_fecha_hora_preview(fecha_obj, row)
+
         montos = _montos_anexo_i(row)
         identificacion, dui, nombre = _identificacion_anexo_i(row)
         numero_control = row.get("numero_control") or _numero_control(row)
-        registro = VentaContribuyente(
-            fecha_emision=fecha_obj.strftime("%d/%m/%Y"),
-            clase=CLASE_POR_TIPO.get(tipo, "4"),
-            tipo=tipo,
-            numero_control=numero_control,
-            codigo_generacion=codigo,
-            sello_recepcion=row.get("sello_recepcion") if enviado else None,
-            identificacion=identificacion,
-            nombre_cliente=nombre,
-            dui=dui,
-            tipo_operacion=_tipo_operacion(row),
-            tipo_ingreso=_tipo_ingreso(row),
-            estado=base,
-            estado_manual=manual,
-            estado_fuente="db" if row.get("envio") else "extra",
-            json_path=row.get("json_path"),
-        )
+        try:
+            tipo_operacion_val = _tipo_operacion(row)
+            tipo_ingreso_val = _tipo_ingreso(row)
+            registro = VentaContribuyente(
+                fecha_emision=fecha_obj.strftime("%d/%m/%Y"),
+                clase=CLASE_POR_TIPO.get(tipo, "4"),
+                tipo=tipo,
+                numero_control=numero_control,
+                codigo_generacion=codigo,
+                sello_recepcion=row.get("sello_recepcion") if enviado else None,
+                identificacion=identificacion,
+                nombre_cliente=nombre,
+                dui=dui,
+                tipo_operacion=tipo_operacion_val,
+                tipo_ingreso=tipo_ingreso_val,
+                estado=base,
+                estado_manual=manual,
+                estado_fuente="db" if row.get("envio") else "extra",
+                json_path=row.get("json_path"),
+            )
+        except Exception as exc:
+            stats[tipo]["excluidos"] += 1
+            motivos["campos_invalidos"].append(
+                _make_exclusion_entry(row, detalle=str(exc), fecha=fecha_obj.strftime("%d/%m/%Y"))
+            )
+            continue
         for clave, valor in montos.items():
             setattr(registro, clave, valor)
         registro.estado_documento = (
@@ -1422,6 +1633,19 @@ def build_anexo_i_contribuyentes(rows: list[dict], db) -> list[VentaContribuyent
         if not envio_display:
             envio_display = "Pendiente de envío"
         registro.estado_envio = envio_display
+        # Atributos auxiliares para la previsualización (no afectan la exportación).
+        try:
+            setattr(registro, "fecha_display", fecha_display or registro.fecha_emision)
+            setattr(registro, "hora_emision", hora_text)
+        except Exception:
+            logger.debug("No se pudo adjuntar fecha/hora auxiliar al registro %s", codigo)
+        if not hora_text:
+            logger.debug(
+                "Anexo I sin hora; codigo=%s fecha=%s raw_fec=%s",
+                codigo,
+                registro.fecha_emision,
+                row.get("fecEmi"),
+            )
         registros.append(registro)
         seen.add(codigo)
         stats[tipo]["incluidos"] += 1
@@ -1431,11 +1655,11 @@ def build_anexo_i_contribuyentes(rows: list[dict], db) -> list[VentaContribuyent
 
 
 def build_anexo_i_consumidor(rows: list[dict], db) -> list[VentaCF]:
-    seen: set[str] = set()
     stats = defaultdict(lambda: {"incluidos": 0, "excluidos": 0})
     motivos = defaultdict(list)
     total_considerados = 0
-    grupos: dict[tuple[str, str], dict] = {}
+    eventos: list[dict] = []
+    seen: set[str] = set()
 
     for row in rows:
         tipo = row.get("tipo")
@@ -1466,63 +1690,20 @@ def build_anexo_i_consumidor(rows: list[dict], db) -> list[VentaCF]:
             descripcion = normalize_estado(manual) or normalize_estado(base) or "no_enviado"
             motivos["no_enviado"].append(f"{codigo}:{descripcion}")
             continue
-        _, fecha_obj = _fecha_emision(row)
+        fecha_texto, fecha_obj = _fecha_emision(row)
         if not fecha_obj:
             stats[tipo]["excluidos"] += 1
             motivos["sin_fecha"].append(f"{codigo}")
             continue
 
+        hora_text = _row_hora_text(row)
+        fecha_hora = _fecha_hora_for_order(row, fecha_obj, hora_text)
+        if not fecha_hora:
+            fecha_hora = datetime.combine(fecha_obj.date(), time.min)
+            logger.debug("Anexo II: sin hora, se usa 00:00 para %s", codigo)
+
         numero_control = row.get("numero_control") or _numero_control(row)
         montos = _montos_anexo_ii_values(row)
-        key = (fecha_obj.strftime("%Y-%m-%d"), tipo)
-        if key not in grupos:
-            grupos[key] = {
-                "fecha": fecha_obj,
-                "tipo": tipo,
-                "totales": {campo: Decimal("0.00") for campo in montos},
-                "controles": [],
-                "codigos": [],
-                "estado": None,
-                "estado_manual": None,
-                "estado_fuente": None,
-                "tipo_operacion": _tipo_operacion(row),
-                "tipo_ingreso": _tipo_ingreso(row),
-                "json_path": row.get("json_path"),
-                "ultimo_control": None,
-                "ultimo_codigo": None,
-                "estado_documento": None,
-                "estado_envio_set": set(),
-            }
-        grupo = grupos[key]
-        for campo, valor in montos.items():
-            grupo["totales"][campo] += valor
-        if numero_control:
-            grupo["controles"].append(numero_control)
-            grupo["ultimo_control"] = numero_control
-        if codigo:
-            grupo["codigos"].append(codigo)
-            grupo["ultimo_codigo"] = codigo
-        if row.get("json_path") and not grupo["json_path"]:
-            grupo["json_path"] = row.get("json_path")
-        fuente = "db" if row.get("envio") else "extra"
-        if fuente == "db" or not grupo["estado_fuente"]:
-            grupo["estado_fuente"] = fuente
-        if manual:
-            grupo["estado_manual"] = manual
-        elif not grupo["estado_manual"]:
-            grupo["estado_manual"] = manual
-        if base:
-            grupo["estado"] = base
-        elif not grupo["estado"]:
-            grupo["estado"] = base
-        if not grupo.get("estado_documento"):
-            doc_estado = (
-                row.get("estado_documento")
-                or row.get("estado_display")
-                or row.get("estado")
-            )
-            if doc_estado:
-                grupo["estado_documento"] = doc_estado
         envio_info = row.get("envio") or {}
         envio_display = (
             row.get("estado_envio")
@@ -1532,11 +1713,85 @@ def build_anexo_i_consumidor(rows: list[dict], db) -> list[VentaCF]:
                 (envio_info or {}).get("estado"),
             )
         )
-        if isinstance(envio_display, str):
-            envio_display = envio_display.strip()
-        if envio_display:
-            grupo.setdefault("estado_envio_set", set()).add(envio_display)
+        evento = {
+            "tipo": tipo,
+            "fecha": fecha_obj,
+            "fecha_text": fecha_texto,
+            "codigo": codigo,
+            "numero_control": numero_control,
+            "hora": hora_text,
+            "fecha_hora": fecha_hora,
+            "montos": montos,
+            "tipo_operacion": _tipo_operacion(row),
+            "tipo_ingreso": _tipo_ingreso(row),
+            "json_path": row.get("json_path"),
+            "estado": base,
+            "estado_manual": manual,
+            "estado_fuente": "db" if row.get("envio") else "extra",
+            "estado_documento": (
+                row.get("estado_documento")
+                or row.get("estado_display")
+                or row.get("estado")
+            ),
+            "estado_envio": envio_display.strip() if isinstance(envio_display, str) else "",
+        }
+        eventos.append(evento)
         seen.add(codigo)
+
+    grupos: dict[tuple[str, str], dict] = {}
+    for evento in eventos:
+        key = (evento["fecha"].strftime("%Y-%m-%d"), evento["tipo"])
+        grupo = grupos.setdefault(
+            key,
+            {
+                "fecha": evento["fecha"],
+                "tipo": evento["tipo"],
+                "totales": defaultdict(lambda: Decimal("0.00")),
+                "docs": [],
+                "estado": None,
+                "estado_manual": None,
+                "estado_fuente": None,
+                "tipo_operacion": None,
+                "tipo_ingreso": None,
+                "json_path": None,
+                "estado_documento": None,
+                "estado_envio_set": set(),
+                "fecha_display": None,
+            },
+        )
+        for campo, valor in evento["montos"].items():
+            grupo["totales"][campo] += valor
+        grupo["docs"].append(
+            {
+                "codigo": evento["codigo"],
+                "numero_control": evento["numero_control"],
+                "fecha_hora": evento["fecha_hora"],
+                "hora": evento["hora"],
+            }
+        )
+        if evento["json_path"] and not grupo["json_path"]:
+            grupo["json_path"] = evento["json_path"]
+        if evento["estado_fuente"] == "db" or not grupo["estado_fuente"]:
+            grupo["estado_fuente"] = evento["estado_fuente"]
+        if evento["estado_manual"]:
+            grupo["estado_manual"] = evento["estado_manual"]
+        elif grupo["estado_manual"] is None:
+            grupo["estado_manual"] = evento["estado_manual"]
+        if evento["estado"]:
+            grupo["estado"] = evento["estado"]
+        elif grupo["estado"] is None:
+            grupo["estado"] = evento["estado"]
+        if not grupo["estado_documento"] and evento["estado_documento"]:
+            grupo["estado_documento"] = evento["estado_documento"]
+        envio_val = evento.get("estado_envio")
+        if envio_val:
+            grupo["estado_envio_set"].add(envio_val)
+        if not grupo["tipo_operacion"] and evento["tipo_operacion"]:
+            grupo["tipo_operacion"] = evento["tipo_operacion"]
+        if not grupo["tipo_ingreso"] and evento["tipo_ingreso"]:
+            grupo["tipo_ingreso"] = evento["tipo_ingreso"]
+        if not grupo["fecha_display"]:
+            grupo["fecha_display"] = _format_fecha_hora_preview(evento["fecha"], {"horEmi": evento["hora"]})
 
     registros: list[VentaCF] = []
     for key in sorted(grupos):
@@ -1555,18 +1810,29 @@ def build_anexo_i_consumidor(rows: list[dict], db) -> list[VentaCF]:
             + totales["terceros_no_domic"]
         )
         totales["total_ventas"] = subtotal
-        controles = grupo["controles"] or grupo["codigos"]
-        documentos = grupo["codigos"] or grupo["controles"]
-        ctrl_del = controles[0] if controles else None
-        ctrl_al = controles[-1] if controles else None
-        doc_del = documentos[0] if documentos else ctrl_del
-        doc_al = documentos[-1] if documentos else ctrl_al
+        documentos = sorted(
+            grupo["docs"],
+            key=lambda d: (d["fecha_hora"], str(d["codigo"]).upper()),
+        )
+        doc_del = documentos[0]["codigo"] if documentos else None
+        doc_al = documentos[-1]["codigo"] if documentos else None
+        numero_control = documentos[-1]["numero_control"] if documentos else None
+        doc_count = len(documentos)
+        hora_inicio = None
+        hora_fin = None
+        if documentos:
+            first_doc = documentos[0]
+            last_doc = documentos[-1]
+            if isinstance(first_doc.get("fecha_hora"), datetime):
+                hora_inicio = first_doc["fecha_hora"].strftime("%H:%M")
+            hora_inicio = hora_inicio or (first_doc.get("hora") or None)
+            if isinstance(last_doc.get("fecha_hora"), datetime):
+                hora_fin = last_doc["fecha_hora"].strftime("%H:%M")
+            hora_fin = hora_fin or (last_doc.get("hora") or None)
         registro = VentaCF(
             fecha=grupo["fecha"].strftime("%d/%m/%Y"),
             clase=CLASE_POR_TIPO.get(tipo, "1"),
             tipo=tipo,
-            ctrl_interno_del=ctrl_del,
-            ctrl_interno_al=ctrl_al,
             numero_doc_del=doc_del,
             numero_doc_al=doc_al,
             ventas_exentas=_decimal_text(totales["ventas_exentas"]),
@@ -1579,20 +1845,25 @@ def build_anexo_i_consumidor(rows: list[dict], db) -> list[VentaCF]:
             zonas_francas_dpa=_decimal_text(totales["zonas_francas_dpa"]),
             terceros_no_domic=_decimal_text(totales["terceros_no_domic"]),
             total_ventas=_decimal_text(totales["total_ventas"]),
-            tipo_operacion=grupo["tipo_operacion"],
-            tipo_ingreso=grupo["tipo_ingreso"],
-            codigo_generacion=grupo["ultimo_codigo"],
-            numero_control=grupo["ultimo_control"],
+            tipo_operacion=grupo["tipo_operacion"] or "0",
+            tipo_ingreso=grupo["tipo_ingreso"] or "0",
+            codigo_generacion=doc_al or doc_del,
+            numero_control=numero_control,
             estado=grupo["estado"],
             estado_manual=grupo["estado_manual"],
             estado_fuente=grupo["estado_fuente"],
             json_path=grupo["json_path"],
         )
+        if documentos:
+            registro.hora_emision = documentos[0].get("hora")
+        registro.doc_count = doc_count
+        registro.hora_inicio = hora_inicio
+        registro.hora_fin = hora_fin
         doc_estado = grupo.get("estado_documento")
         if isinstance(doc_estado, str):
             doc_estado = doc_estado.strip()
         registro.estado_documento = doc_estado or None
-        estados_envio = grupo.get("estado_envio_set") or set()
+        registros_envio = grupo.get("estado_envio_set") or set()
 
         def _envio_priority(value: str) -> tuple[int, str]:
             base = value.strip().lower()
@@ -1610,12 +1881,16 @@ def build_anexo_i_consumidor(rows: list[dict], db) -> list[VentaCF]:
             priority = order.get(base, 5)
             return (priority, value)
 
-        if estados_envio:
-            ordered = sorted({val.strip() for val in estados_envio if val.strip()}, key=_envio_priority)
+        if registros_envio:
+            ordered = sorted({val.strip() for val in registros_envio if val.strip()}, key=_envio_priority)
             envio_display = " | ".join(ordered) if ordered else "Pendiente de envío"
         else:
             envio_display = "Pendiente de envío"
         registro.estado_envio = envio_display
+        try:
+            setattr(registro, "fecha_display", grupo.get("fecha_display") or registro.fecha)
+        except Exception:
+            logger.debug("No se pudo adjuntar fecha/hora auxiliar al registro CF %s", registro.codigo_generacion)
         registros.append(registro)
         stats[tipo]["incluidos"] += 1
 
@@ -1821,6 +2096,10 @@ def _from_facturacion_row(raw: dict, db) -> dict:
                 row["tipo"] = str(ident.get("tipoDte")).zfill(2)
             except Exception:
                 row["tipo"] = ident.get("tipoDte")
+        if ident.get("horEmi"):
+            row["horEmi"] = ident.get("horEmi")
+        elif ident.get("horaEmision"):
+            row["horEmi"] = ident.get("horaEmision")
 
     sello = None
     if isinstance(dte_json, dict):
@@ -1947,6 +2226,8 @@ def _from_facturacion_row(raw: dict, db) -> dict:
 
     if not isinstance(row.get("fecha_obj"), datetime):
         fecha_candidata = row.get("fecEmi") or row.get("fecha_display")
+        if fecha_candidata and row.get("horEmi") and (" " not in str(fecha_candidata) and "T" not in str(fecha_candidata)):
+            fecha_candidata = f"{fecha_candidata} {row.get('horEmi')}"
         fecha_normalizada = _normalize_fecha_text(fecha_candidata)
         fecha_parseada = _maybe_parse_fecha(fecha_normalizada)
         if fecha_parseada:
@@ -1955,6 +2236,22 @@ def _from_facturacion_row(raw: dict, db) -> dict:
                 row["fecEmi"] = fecha_parseada.strftime("%Y-%m-%d")
             if not row.get("fecha_display"):
                 row["fecha_display"] = fecha_parseada.strftime("%Y-%m-%d")
+    else:
+        # Complementa la hora si existe por separado
+        if row.get("horEmi"):
+            hora_norm = _normalize_hora_text(row.get("horEmi"))
+            if hora_norm:
+                try:
+                    hora_parts = [int(p) for p in hora_norm.split(":")]
+                    if len(hora_parts) >= 2:
+                        row["fecha_obj"] = row["fecha_obj"].replace(
+                            hour=hora_parts[0],
+                            minute=hora_parts[1],
+                            second=row["fecha_obj"].second,
+                            microsecond=0,
+                        )
+                except Exception:
+                    pass
 
     return row
 
@@ -2074,7 +2371,17 @@ def _maybe_parse_fecha(fecha: str | None) -> datetime | None:
     texto = _normalize_fecha_text(fecha)
     if not texto:
         return None
-    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y/%m/%d",
+        "%Y/%m/%d %H:%M",
+        "%Y/%m/%d %H:%M:%S",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y %H:%M:%S",
+    ):
         try:
             return datetime.strptime(texto, fmt)
         except ValueError:
@@ -2140,21 +2447,46 @@ def _enrich_rows_from_db(rows: list[dict], db) -> None:
                 _ensure_field(row, "codigo_generacion", _codigo_generacion)
                 _ensure_field(row, "numero_control", _numero_control)
 
-                if not row.get("fecEmi"):
-                    dte_json = row.get("dte_json")
-                    if isinstance(dte_json, dict):
-                        ident = dte_json.get("identificacion")
-                        if isinstance(ident, dict):
-                            fec = ident.get("fecEmi") or ident.get("fechaEmision")
-                            normalizado = _normalize_fecha_text(fec)
-                            if normalizado:
-                                row["fecEmi"] = normalizado
+                dte_json = row.get("dte_json")
+                if isinstance(dte_json, dict):
+                    ident = dte_json.get("identificacion")
+                    if isinstance(ident, dict):
+                        fec = ident.get("fecEmi") or ident.get("fechaEmision")
+                        normalizado = _normalize_fecha_text(fec)
+                        if normalizado and not row.get("fecEmi"):
+                            row["fecEmi"] = normalizado
+                        if ident.get("horEmi") and not row.get("horEmi"):
+                            row["horEmi"] = ident.get("horEmi")
+                        elif ident.get("horaEmision") and not row.get("horEmi"):
+                            row["horEmi"] = ident.get("horaEmision")
+                if isinstance(extra_data, dict):
+                    if not row.get("horEmi"):
+                        for key in ("horEmi", "horaEmision", "hora_emision"):
+                            if extra_data.get(key):
+                                row["horEmi"] = extra_data.get(key)
+                                break
 
             if not isinstance(row.get("fecha_obj"), datetime):
                 fecha_texto = row.get("fecEmi") or venta_data.get("fecha")
+                if fecha_texto and row.get("horEmi") and (" " not in str(fecha_texto) and "T" not in str(fecha_texto)):
+                    fecha_texto = f"{fecha_texto} {row.get('horEmi')}"
                 fecha_obj = _maybe_parse_fecha(fecha_texto)
                 if fecha_obj:
                     row["fecha_obj"] = fecha_obj
+            else:
+                if row.get("horEmi"):
+                    hora_norm = _normalize_hora_text(row.get("horEmi"))
+                    if hora_norm:
+                        try:
+                            h, m = hora_norm.split(":")
+                            row["fecha_obj"] = row["fecha_obj"].replace(
+                                hour=int(h),
+                                minute=int(m),
+                                second=row["fecha_obj"].second,
+                                microsecond=0,
+                            )
+                        except Exception:
+                            pass
 
         envio_payload = env_map.get(venta_id) if venta_id is not None else None
         if envio_payload:
@@ -2316,14 +2648,17 @@ def _collect_credito_fiscal_orphans(
         fecha_obj: datetime | None = None
         if fecha_texto and hora_texto:
             combinada = f"{_normalize_fecha_text(fecha_texto)} {hora_texto}".strip()
-            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"):
                 try:
                     fecha_obj = datetime.strptime(combinada, fmt)
                     break
                 except ValueError:
                     continue
         if fecha_obj is None:
-            fecha_obj = _maybe_parse_fecha(fecha_texto)
+            if fecha_texto and hora_texto and (" " not in str(fecha_texto) and "T" not in str(fecha_texto)):
+                fecha_obj = _maybe_parse_fecha(f"{fecha_texto} {hora_texto}")
+            else:
+                fecha_obj = _maybe_parse_fecha(fecha_texto)
 
         if not fecha_obj:
             info_row = {"codigo_generacion": codigo_generacion, "tipo": tipo_codigo, "fecEmi": fecha_texto}

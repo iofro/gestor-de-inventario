@@ -1403,7 +1403,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.comision_pct_spin.setMaximumWidth(90)
         com_layout.addWidget(self.comision_pct_spin)
         self.comision_tipo_combo = QComboBox()
-        self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
+        self.comision_tipo_combo.addItems(["Incluida en el precio"])
         self.comision_tipo_combo.setEnabled(False)
         self.comision_tipo_combo.setMinimumWidth(160)
         com_layout.addWidget(self.comision_tipo_combo)
@@ -1998,10 +1998,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         # Precios siempre editables y sincronizados
         self._recalcular_totales()
         precio_unit_base = self.precio_spin.value()
+        factor = self._presentacion_factor_from_combo(self.presentacion_combo) or 1
+        if factor <= 0:
+            factor = 1
         precio_presentacion = precio_unit_base * max(factor, 1)
         precio_total = precio_presentacion * cantidad_bultos
 
-        factor = self._presentacion_factor_from_combo(self.presentacion_combo)
         pres_nombre = (self.presentacion_combo.currentText() or "").strip()
         cantidad_base = cantidad_bultos * factor
         precio_base = precio_presentacion / factor if factor else precio_presentacion
@@ -2860,7 +2862,7 @@ class RegisterPurchaseDialog(QDialog):
         self.comision_pct_spin.setDecimals(2)
         self.comision_pct_spin.setValue(0)
         self.comision_tipo_combo = QComboBox()
-        self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
+        self.comision_tipo_combo.addItems(["Incluida en el precio"])
         self.btn_agregar = QPushButton("Agregar a compra")
 
         # --- Nuevo layout tipo dashboard ---
@@ -3954,9 +3956,8 @@ class RegisterPurchaseDialog(QDialog):
             self.iva_checkbox.setChecked(False)
 
         self.comision_pct_spin.setValue(float(item.get("comision_pct", 0)))
-        tipo_idx = self.comision_tipo_combo.findText(item.get("comision_tipo", "Añadida al total"))
-        if tipo_idx >= 0:
-            self.comision_tipo_combo.setCurrentIndex(tipo_idx)
+        tipo_idx = 0
+        self.comision_tipo_combo.setCurrentIndex(tipo_idx)
 
         fecha_texto = item.get("fecha_vencimiento")
         if fecha_texto:
@@ -4454,7 +4455,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.comision_pct_spin.setEnabled(False)
         com_layout.addWidget(self.comision_pct_spin)
         self.comision_tipo_combo = QComboBox()
-        self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
+        self.comision_tipo_combo.addItems(["Incluida en el precio"])
         self.comision_tipo_combo.setEnabled(False)
         com_layout.addWidget(self.comision_tipo_combo)
         cliente_layout.addLayout(com_layout)
@@ -7760,7 +7761,7 @@ class DTEConfigDialog(QDialog):
                 )
                 return
             jws.set_cert_upload_dir(str(dest.parent))
-            display_name = source_path.name or dest.name
+            display_name = dest.name
             self.cert_path.clear()
             self.cert_path.setText(display_name)
             self.cert_path.setToolTip(str(dest))

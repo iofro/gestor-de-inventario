@@ -4,6 +4,8 @@ import base64
 import requests
 import logging
 import hashlib
+import shutil
+import re
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -20,11 +22,13 @@ from paths import (
     CERT_UPLOAD_DIR as _DEFAULT_CERT_DIR,
     ensure_user_dir,
 )
+from utils import resource_path
 from utils.certificates import (
     verify_certificate_setup,
     dump_certificate_diagnosis,
     run_certificate_doctor,
     looks_like_base64,
+    resolve_signer_cert_dir,
 )
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = float(os.getenv("SIGN_TIMEOUT", "10"))
@@ -61,6 +65,8 @@ def set_cert_upload_dir(path: str) -> None:
     """
     global CERT_UPLOAD_DIR
     CERT_UPLOAD_DIR = os.path.abspath(path).strip()
+    os.environ["CERT_UPLOAD_DIR"] = CERT_UPLOAD_DIR
+    os.environ["FIRMADOR_CERT_DIR"] = CERT_UPLOAD_DIR
 
 
 def _get_sign_url(path: str = CONFIG_NEGOCIO_PATH) -> str:
@@ -158,17 +164,90 @@ def _load_config(path: str = CONFIG_NEGOCIO_PATH):
 def _ensure_cert_file(nit: str) -> None:
     """Verify that the certificate file for ``nit`` exists and is readable."""
     nit = nit.strip()
-    cert_dir = Path(CERT_UPLOAD_DIR.strip()).expanduser().resolve()
-    canonical = cert_dir / f"{nit}.crt"
+    checked_dirs: list[str] = []
+    last_access_error: str | None = None
 
-    if canonical.is_file() and os.access(canonical, os.R_OK):
-        return
+    for cert_dir in _candidate_cert_dirs():
+        checked_dirs.append(str(cert_dir))
+        canonical = cert_dir / f"{nit}.crt"
+        if not canonical.is_file():
+            candidates = sorted(cert_dir.glob("*.crt"))
+            if len(candidates) == 1:
+                try:
+                    shutil.copy2(candidates[0], canonical)
+                except Exception:
+                    pass
+        if canonical.is_file():
+            set_cert_upload_dir(str(cert_dir))
+            if os.access(canonical, os.R_OK):
+                return
+            last_access_error = f"CERT_ACCESS: Certificado no accesible: {canonical}"
 
-    candidates = sorted(cert_dir.glob("*.crt"))
-    if len(candidates) == 1 and os.access(candidates[0], os.R_OK):
-        return
+    if last_access_error:
+        raise RuntimeError(last_access_error)
 
-    raise RuntimeError(f"Certificado no accesible: {canonical}")
+    dirs_text = ", ".join(checked_dirs)
+    raise RuntimeError(
+        "CERT_NOT_FOUND: "
+        f"No se detectó el certificado (.crt) esperado {nit}.crt. "
+        f"Directorios revisados: {dirs_text}"
+    )
+
+
+def _candidate_cert_dirs() -> list[Path]:
+    candidate_dirs = [
+        resolve_signer_cert_dir(),
+        Path(_DEFAULT_CERT_DIR),
+        ensure_user_dir("certificados"),
+        resource_path("svfe-api-firmador", "uploads"),
+    ]
+    unique_dirs: list[Path] = []
+    for entry in candidate_dirs:
+        try:
+            resolved = Path(entry).expanduser().resolve()
+        except Exception:
+            resolved = Path(entry)
+        if resolved not in unique_dirs:
+            unique_dirs.append(resolved)
+    return unique_dirs
+
+
+def _find_local_certificate(nit: str) -> Path | None:
+    for cert_dir in _candidate_cert_dirs():
+        candidate = cert_dir / f"{nit}.crt"
+        if candidate.is_file():
+            return candidate
+    for cert_dir in _candidate_cert_dirs():
+        candidates = sorted(cert_dir.glob("*.crt"))
+        if len(candidates) == 1:
+            return candidates[0]
+    return None
+
+
+def _extract_cert_path(message: str | None) -> Path | None:
+    if not message:
+        return None
+    text = str(message)
+    match = re.search(r"([A-Za-z]:\\\\[^\\r\\n]+?\\.crt)", text)
+    if match:
+        return Path(match.group(1))
+    match = re.search(r"(/[^\\r\\n]+?\\.crt)", text)
+    if match:
+        return Path(match.group(1))
+    return None
+
+
+def _sync_cert_to_target(nit: str, target: Path) -> bool:
+    source = _find_local_certificate(nit)
+    if not source:
+        return False
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        set_cert_upload_dir(str(target.parent))
+        return True
+    except Exception:
+        return False
 
 
 def sign_json(
@@ -187,7 +266,8 @@ def sign_json(
         nit, passwordPri, activo = _load_config()
     if not nit:
         raise RuntimeError("NIT del certificado no configurado")
-    diagnosis = verify_certificate_setup(nit, passwordPri, CERT_UPLOAD_DIR)
+    cert_dir = str(resolve_signer_cert_dir())
+    diagnosis = verify_certificate_setup(nit, passwordPri, cert_dir)
     logger.info(
         "SIGN.DIAG: cert_dir=%s source=%s nit_config=%s nit_crt=%s exists=%s size=%s sha256=%s multiple_crts=%s ok=%s errors=%s",
         diagnosis.cert_dir,
@@ -201,7 +281,11 @@ def sign_json(
         diagnosis.ok,
         diagnosis.errors,
     )
+    if "parse_error" in diagnosis.errors:
+        detail = diagnosis.parse_error or "XML inválido en certificado"
+        raise RuntimeError(f"CERT_INVALID: {detail}")
     _ensure_cert_file(nit)
+    cert_dir = str(resolve_signer_cert_dir())
     url = url or _get_sign_url()
     print(
         "SIGN: CERT?",
@@ -261,7 +345,7 @@ def sign_json(
         diagnosis.ok,
         diagnosis.errors,
     )
-    try:
+    def _post_request():
         response = requests.post(url, json=body, timeout=SIGN_TIMEOUT)
         status_code = getattr(response, "status_code", "N/A")
         resp_text = getattr(response, "text", "")
@@ -270,57 +354,76 @@ def sign_json(
         else:
             logger.debug("Respuesta del firmador %s: %s", status_code, resp_text)
         response.raise_for_status()
-    except requests.Timeout as exc:
-        print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
-        raise RuntimeError("Tiempo de espera agotado al firmar") from exc
-    except requests.HTTPError as exc:
-        print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
-        status = exc.response.status_code
-        raise RuntimeError(f"Error HTTP {status} al firmar: {exc.response.text}") from exc
-    except requests.RequestException as exc:
-        print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
-        raise RuntimeError(f"Error al firmar: {exc}") from exc
+        return response
 
-    data = response.json()
-    if isinstance(data, dict):
-        if data.get("status") == "OK":
-            return data.get("body")
-        body = data.get("body")
-        if isinstance(body, dict):
-            code = body.get("codigo") or body.get("code")
-            message = body.get("mensaje") or body.get("message")
-            if code == "803":
-                logger.error(
-                    "SIGN.ERROR: firmador_code=%s, firmador_msg=%r",
-                    code,
-                    message,
-                )
-                logger.error("SIGN.ERROR.BODY: %s", body)
-                diag_dir = ensure_user_dir("diagnostics")
-                try:
-                    report = run_certificate_doctor(
-                        nit=nit,
-                        password=passwordPri or "",
-                        signer_url=url,
-                        cert_dir=CERT_UPLOAD_DIR,
-                        output_dir=diag_dir,
+    retried = False
+    while True:
+        try:
+            response = _post_request()
+        except requests.Timeout as exc:
+            print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
+            raise RuntimeError("Tiempo de espera agotado al firmar") from exc
+        except requests.HTTPError as exc:
+            print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
+            status = exc.response.status_code
+            raise RuntimeError(f"Error HTTP {status} al firmar: {exc.response.text}") from exc
+        except requests.RequestException as exc:
+            print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
+            raise RuntimeError(f"Error al firmar: {exc}") from exc
+
+        data = response.json()
+        if isinstance(data, dict):
+            if data.get("status") == "OK":
+                return data.get("body")
+            body = data.get("body")
+            if isinstance(body, dict):
+                code = str(body.get("codigo") or body.get("code") or "").strip()
+                message = body.get("mensaje") or body.get("message")
+                message_text = str(message or "").lower()
+                if code in {"801", "812"} or "no se encontro el archivo" in message_text:
+                    target_path = _extract_cert_path(message)
+                    if not retried and target_path and _sync_cert_to_target(nit, target_path):
+                        retried = True
+                        continue
+                    detail = str(message or "").strip()
+                    if detail:
+                        raise RuntimeError(f"CERT_NOT_FOUND: {detail}")
+                    raise RuntimeError(
+                        "CERT_NOT_FOUND: "
+                        f"No se detectó el certificado (.crt) esperado {nit}.crt."
                     )
-                    diag_path = report.json_path
-                    markdown_path = report.markdown_path
-                except Exception as diag_exc:  # pragma: no cover - safeguard
-                    logger.exception("SIGN.DIAG.ERROR: %s", diag_exc)
-                    diag_path = dump_certificate_diagnosis(diag_dir)
-                    markdown_path = None
-                else:
-                    logger.info(
-                        "SIGN.DIAG.OK: json=%s markdown=%s",
-                        diag_path,
-                        markdown_path,
+                if code == "803":
+                    logger.error(
+                        "SIGN.ERROR: firmador_code=%s, firmador_msg=%r",
+                        code,
+                        message,
                     )
-                logger.error("SIGN.DIAG.WRITE: path=%s", diag_path)
-                raise RuntimeError(f"{body} (diagnosis: {diag_path})")
-        raise RuntimeError(str(body))
-    return data
+                    logger.error("SIGN.ERROR.BODY: %s", body)
+                    diag_dir = ensure_user_dir("diagnostics")
+                    try:
+                        report = run_certificate_doctor(
+                            nit=nit,
+                            password=passwordPri or "",
+                            signer_url=url,
+                            cert_dir=cert_dir,
+                            output_dir=diag_dir,
+                        )
+                        diag_path = report.json_path
+                        markdown_path = report.markdown_path
+                    except Exception as diag_exc:  # pragma: no cover - safeguard
+                        logger.exception("SIGN.DIAG.ERROR: %s", diag_exc)
+                        diag_path = dump_certificate_diagnosis(diag_dir)
+                        markdown_path = None
+                    else:
+                        logger.info(
+                            "SIGN.DIAG.OK: json=%s markdown=%s",
+                            diag_path,
+                            markdown_path,
+                        )
+                    logger.error("SIGN.DIAG.WRITE: path=%s", diag_path)
+                    raise RuntimeError(f"{body} (diagnosis: {diag_path})")
+            raise RuntimeError(str(body))
+        return data
 
 
 def sign_and_save(

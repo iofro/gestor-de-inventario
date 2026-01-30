@@ -5,6 +5,9 @@ import warnings
 import sqlite3
 import logging
 import traceback
+import atexit
+import errno
+import ctypes
 from pathlib import Path
 import secrets
 import string
@@ -42,6 +45,7 @@ from utils.log_buffer import install_log_buffer
 LAST_FILE_PATH = Path(LAST_INVENTORY_PATH)
 LAST_USER_PATH = Path(user_data_path("last_user.txt"))
 DEFAULT_INVENTORY = resource_path("inventario.json")
+LOCK_FILE_PATH = Path(user_data_path("vertex_dte.lock"))
 
 logger = logging.getLogger(__name__)
 startup_logger = logging.getLogger("startup")
@@ -64,6 +68,87 @@ def handle_exception(exc_type, exc_value, exc_traceback):
         )
     except RuntimeError:
         sys.stderr.write(f"Ocurrió un error inesperado: {message}\n")
+
+
+def _is_pid_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if handle == 0:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as exc:
+        return exc.errno != errno.ESRCH
+    except Exception:
+        return False
+    return True
+
+
+def _read_lock_pid() -> int | None:
+    try:
+        if LOCK_FILE_PATH.is_file():
+            content = LOCK_FILE_PATH.read_text(encoding="utf-8").strip()
+            if content.isdigit():
+                return int(content)
+    except OSError:
+        return None
+    return None
+
+
+def _remove_lock_file() -> None:
+    try:
+        if LOCK_FILE_PATH.is_file():
+            content = LOCK_FILE_PATH.read_text(encoding="utf-8").strip()
+            if content == str(os.getpid()):
+                LOCK_FILE_PATH.unlink()
+    except OSError:
+        pass
+
+
+def _show_already_running_message() -> None:
+    app = QApplication.instance()
+    created = False
+    if app is None:
+        app = QApplication([])
+        created = True
+    QMessageBox.warning(
+        None,
+        "Vertex DTE",
+        "El sistema ya está abierto.\n"
+        "Cierra la otra ventana antes de abrir una nueva instancia.",
+    )
+    if created:
+        app.quit()
+
+
+def ensure_single_instance() -> None:
+    LOCK_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing_pid = _read_lock_pid()
+    current_pid = os.getpid()
+    if existing_pid and existing_pid != current_pid:
+        if _is_pid_running(existing_pid):
+            _show_already_running_message()
+            sys.exit(0)
+        try:
+            LOCK_FILE_PATH.unlink()
+        except OSError:
+            pass
+    try:
+        LOCK_FILE_PATH.write_text(str(current_pid), encoding="utf-8")
+    except OSError:
+        return
+    atexit.register(_remove_lock_file)
 
 
 def cargar_ultimo_archivo():
@@ -128,6 +213,14 @@ def _get_startup_inventory_candidates(primary: str) -> list[str]:
             _add(str(DEFAULT_INVENTORY))
     except OSError:
         pass
+
+    def _mtime(path: str) -> float:
+        try:
+            return Path(path).stat().st_mtime
+        except OSError:
+            return 0.0
+
+    candidates.sort(key=_mtime, reverse=True)
     return candidates
 
 
@@ -247,6 +340,7 @@ def _ensure_admin_recovery(db: DB, parent: QDialog | None = None):
 if __name__ == "__main__":
     install_log_buffer()
     migrate_datos_negocio()
+    ensure_single_instance()
     if getattr(sys, "frozen", False):
         checks = {
             "schema_NR": resource_path("svfe-json-schemas", "fe-nr-v3.json"),

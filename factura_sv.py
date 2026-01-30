@@ -496,6 +496,8 @@ def generar_factura_electronica_pdf(
             "complemento": direccion_cliente,
         }
     direccion = format_direccion(cliente_dir)
+    nombre_comercial = cliente.get("nombreComercial") or ""
+    correo_receptor = cliente.get("email") or cliente.get("correo") or ""
 
     direccion_line_count = 1
     direccion_extra_padding = 0.0
@@ -511,6 +513,10 @@ def generar_factura_electronica_pdf(
             direccion_extra_padding = 0.25
 
     receptor_line_count = 4  # encabezado + nombre + DUI + NIT
+    if nombre_comercial:
+        receptor_line_count += 1
+    if correo_receptor:
+        receptor_line_count += 1
     receptor_extra = 1  # línea "Giro/Orden" o espaciado
     if mostrar_datos_receptor_completos:
         receptor_extra += 1  # línea "Condición pago"
@@ -607,6 +613,26 @@ def generar_factura_electronica_pdf(
         text_y,
         receptor_nombre_width,
     )
+
+    if nombre_comercial:
+        text_y -= line_h
+        draw_text_with_ellipsis(
+            c,
+            f"Nombre comercial: {nombre_comercial}",
+            left_x,
+            text_y,
+            receptor_nombre_width,
+        )
+
+    if correo_receptor:
+        text_y -= line_h
+        draw_text_with_ellipsis(
+            c,
+            f"Correo electrónico: {correo_receptor}",
+            left_x,
+            text_y,
+            receptor_nombre_width,
+        )
 
     text_y -= line_h
     draw_text_with_ellipsis(

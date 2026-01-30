@@ -6052,6 +6052,7 @@ class ClienteDialog(QDialog):
         self.tipo_contribuyente_combo = QComboBox()
         self.tipo_contribuyente_combo.addItems(["Persona Natural", "Persona Jurídica"])
         self.nombre_comercial_edit = QLineEdit()
+        self.nombre_comercial_pdf_edit = QLineEdit()
         self.nrc_edit = QLineEdit()
         self.nit_edit = QLineEdit()
         nit_validator = QRegularExpressionValidator(QRegularExpression(r"\d{0,14}"))
@@ -6082,11 +6083,13 @@ class ClienteDialog(QDialog):
         self._cliente_id = cliente.get("id") if cliente else None
 
         self.nombre_comercial_label = QLabel("Razón social (opcional):")
+        self.nombre_comercial_pdf_label = QLabel("Nombre comercial (opcional):")
         form = [
             ("Código:", self.codigo_edit),
             ("Nombre completo:", self.nombre_edit),
             ("Tipo contribuyente:", self.tipo_contribuyente_combo),
             (self.nombre_comercial_label, self.nombre_comercial_edit),
+            (self.nombre_comercial_pdf_label, self.nombre_comercial_pdf_edit),
             ("NRC:", self.nrc_edit),
             ("NIT:", self.nit_edit),
             ("DUI:", self.dui_edit),
@@ -6110,10 +6113,10 @@ class ClienteDialog(QDialog):
             }
         )
         if nombres_comerciales:
-            completer = QCompleter(nombres_comerciales, self.nombre_comercial_edit)
+            completer = QCompleter(nombres_comerciales, self.nombre_comercial_pdf_edit)
             completer.setCaseSensitivity(Qt.CaseInsensitive)
             completer.setFilterMode(Qt.MatchContains)
-            self.nombre_comercial_edit.setCompleter(completer)
+            self.nombre_comercial_pdf_edit.setCompleter(completer)
 
         for label, widget in form:
             if isinstance(label, str):
@@ -6152,7 +6155,8 @@ class ClienteDialog(QDialog):
         if cliente:
             self.codigo_edit.setText(cliente.get("codigo", ""))
             self.nombre_edit.setText(cliente.get("nombre", ""))
-            self.nombre_comercial_edit.setText(cliente.get("nombreComercial", ""))
+            self.nombre_comercial_edit.setText("")
+            self.nombre_comercial_pdf_edit.setText(cliente.get("nombreComercial", ""))
             self.nrc_edit.setText(cliente.get("nrc", ""))
             self.nit_edit.setText(cliente.get("nit", ""))
             self.dui_edit.setText(cliente.get("dui", ""))
@@ -6173,6 +6177,11 @@ class ClienteDialog(QDialog):
             if not tipo_contribuyente:
                 extras = self._parse_cliente_otros(cliente.get("otros"))
                 tipo_contribuyente = extras.get("tipoContribuyente")
+            extras = self._parse_cliente_otros(cliente.get("otros"))
+            razon_social = extras.get("razonSocial") or ""
+            if not razon_social:
+                razon_social = cliente.get("nombreComercial", "")
+            self.nombre_comercial_edit.setText(razon_social)
             if tipo_contribuyente:
                 self.tipo_contribuyente_combo.setCurrentText(str(tipo_contribuyente))
         self._actualizar_tipo_contribuyente_estado(self.tipo_contribuyente_combo.currentText())
@@ -6226,7 +6235,7 @@ class ClienteDialog(QDialog):
         return {
             "codigo": self.codigo_edit.text().strip(),
             "nombre": self.nombre_edit.text().strip(),
-            "nombreComercial": self.nombre_comercial_edit.text().strip(),
+            "nombreComercial": self.nombre_comercial_pdf_edit.text().strip(),
             "nrc": self.nrc_edit.text().strip(),
             "nit": self.nit_edit.text().strip(),
             "dui": self.dui_edit.text().strip(),
@@ -6273,6 +6282,7 @@ class ClienteDialog(QDialog):
             self.codigo_edit,
             self.nombre_edit,
             self.nombre_comercial_edit,
+            self.nombre_comercial_pdf_edit,
             self.nrc_edit,
             self.nit_edit,
             self.dui_edit,

@@ -1,0 +1,33 @@
+Reporte comparativo Venta vs DTE (Credito Fiscal 03)
+Fuente: JSON proporcionado (dteJson)
+
+Tabla por item
+numItem | cantidad | precioUni(base) | ventaGravada(base) | iva_linea_raw(8) | iva_linea_2
+     1 |      6.0 |      2.61061947 |       15.66371682 |     2.03628319 | 2.04
+     2 |      2.0 |      5.22123894 |       10.44247788 |     1.35752212 | 1.36
+     3 |      3.0 |      5.16814159 |       15.50442477 |     2.01557522 | 2.02
+     4 |      1.0 |      6.19469027 |        6.19469027 |     0.80530974 | 0.81
+     5 |      6.0 |      1.94690266 |       11.68141596 |     1.51858407 | 1.52
+     6 |     10.0 |      1.44247788 |       14.42477880 |     1.87522124 | 1.88
+     7 |      2.0 |      4.86725664 |        9.73451328 |     1.26548673 | 1.27
+     8 |      1.0 |      2.07964602 |        2.07964602 |     0.27035398 | 0.27
+
+Resumen metodo DTE (resumen)
+SUM ventaGravada exacta: 85.72566380
+totalGravada_2 (round 2): 85.73
+IVA resumen (13% de totalGravada_2): 11.14
+totalPagar_2 calculado: 96.87
+Checks vs JSON
+- resumen.totalGravada: 85.73 (match=True)
+- resumen.tributos[IVA].valor: 11.14 (match=True)
+- resumen.totalPagar: 96.87 (match=True)
+- suma pagos: 96.87 (match=True)
+
+Resumen metodo Venta por linea
+IVA suma lineas (round 2 por linea): 11.17
+totalPorLineas_2: 96.90
+
+Diferencia y causa
+deltaIVA = ivaLineas_2 - ivaResumen_2 = 0.03
+deltaTotal = totalPorLineas_2 - totalPagar_2 = 0.03
+Causa probable: redondeo por linea vs redondeo global del resumen.

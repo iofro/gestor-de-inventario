@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
     QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout, QScrollArea, QPlainTextEdit,
-    QStyledItemDelegate, QStyleOptionViewItem, QLayout
+    QStyledItemDelegate, QStyleOptionViewItem, QStyleOptionHeader, QStyle, QLayout
 )
 from PyQt5.QtCore import (
     Qt,
@@ -40,20 +40,25 @@ from PyQt5.QtGui import (
     QPainter,
     QColor,
     QPainterPath,
+    QTextDocument,
+    QTextOption,
+    QPalette,
 )
 
 import os
 import re
+import html
+import unicodedata
 
 from db import DB
 
 from utils import jws
 from utils.certificates import copy_certificate_to_signer_dir, resolve_signer_cert_dir
-from utils.catalogos import CONTINGENCIA
+from utils.catalogos import CONTINGENCIA, CAT_MUNI44_BY_DEPTO
 from utils.sanitize import solo_digitos
 from utils.fiscal_extra import normalize_retencion_payload
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
-from dte import peek_next_correlativo
+from dte import peek_next_correlativo, peek_next_from_last_envio
 from utils.party_resolver import Catalogs, normalize_identifier, resolve_party_names
 from utils.loading import loading_dialog
 from retenciones.service import RetencionCRService
@@ -108,6 +113,42 @@ class _NoWheelFilter(QObject):
         if event.type() == QEvent.Wheel:
             event.ignore()
             return True
+        return super().eventFilter(obj, event)
+
+
+class _ReadOnlyNoticeFilter(QObject):
+    """Muestra un aviso cuando se intenta modificar un campo solo lectura."""
+
+    def __init__(self, message: str, parent=None):
+        super().__init__(parent)
+        self._message = message
+        self._shown = False
+
+    def _show_notice(self, widget):
+        if self._shown:
+            return
+        self._shown = True
+        QMessageBox.information(widget, "Solo lectura", self._message)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress:
+            key = event.key()
+            modifiers = event.modifiers()
+            if isinstance(obj, QComboBox):
+                if key not in (Qt.Key_Tab, Qt.Key_Backtab):
+                    self._show_notice(obj)
+                    return True
+            if key in (Qt.Key_Backspace, Qt.Key_Delete):
+                self._show_notice(obj)
+                return True
+            text = event.text()
+            if text and not (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
+                self._show_notice(obj)
+                return True
+        if isinstance(obj, QComboBox):
+            if event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick, QEvent.Wheel):
+                self._show_notice(obj)
+                return True
         return super().eventFilter(obj, event)
 
 
@@ -249,12 +290,36 @@ def _populate_combo(combo, items):
     combo.setMaxVisibleItems(8)
     combo.view().setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
+def _normalize_combo_text(value: str | None) -> str:
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFD", str(value))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip().upper()
 
-def _set_combo_value(combo, items, value):
+
+def _set_combo_value(combo, items, value, departamento: str | None = None):
     if not value:
         combo.setCurrentIndex(0)
         return
-    idx = combo.findData(value)
+    raw_value = str(value).strip()
+    if raw_value.isdigit():
+        raw_value = raw_value.zfill(2)
+    idx = combo.findData(raw_value)
+    if departamento:
+        dep_code = str(departamento).strip()
+        if dep_code.isdigit():
+            dep_code = dep_code.zfill(2)
+        expected_name = CAT_MUNI44_BY_DEPTO.get(dep_code or "", {}).get(raw_value)
+        if expected_name:
+            expected_norm = _normalize_combo_text(expected_name)
+            for i in range(combo.count()):
+                if str(combo.itemData(i) or "") != raw_value:
+                    continue
+                if expected_norm in _normalize_combo_text(combo.itemText(i)):
+                    idx = i
+                    break
     if idx == -1:
         for item in items:
             if item["nombre"] == value:
@@ -710,6 +775,61 @@ class ProductDialogBase:
         )
         return manager, db
 
+    def _merge_virtual_products(self, productos):
+        """Asegura que cada producto exista al menos una vez en la lista (stock 0 si no hay lote)."""
+        productos = list(productos or [])
+        _, db = self._resolve_manager_db()
+        if db is None or not hasattr(db, "get_productos"):
+            return productos
+        try:
+            all_products = db.get_productos()
+        except Exception:
+            logger.exception("POS: no se pudo leer productos completos para virtuales")
+            return productos
+
+        def _id_key(value):
+            if value is None:
+                return None
+            if isinstance(value, str):
+                text = value.strip()
+                return text or None
+            return str(value)
+
+        existing_ids = set()
+        for item in productos:
+            key = _id_key(item.get("producto_id") or item.get("id"))
+            if key:
+                existing_ids.add(key)
+
+        added = 0
+        for prod in all_products:
+            key = _id_key(prod.get("id"))
+            if not key or key in existing_ids:
+                continue
+            productos.append(
+                {
+                    "lote_id": None,
+                    "producto_id": prod.get("id"),
+                    "nombre": prod.get("nombre", ""),
+                    "codigo": prod.get("codigo", ""),
+                    "sku": prod.get("sku", ""),
+                    "codigo_lote": "",
+                    "registro_sanitario": "",
+                    "stock": 0,
+                    "precio_unitario": 0,
+                    "vendedor_id": prod.get("vendedor_id"),
+                    "Distribuidor_id": prod.get("Distribuidor_id"),
+                    "fecha_vencimiento": "",
+                    "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
+                    "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
+                    "presentaciones": prod.get("presentaciones"),
+                }
+            )
+            added += 1
+        if added:
+            logger.info("POS: agregados virtuales sin lote=%s", added)
+        return productos
+
     def _mostrar_productos(self, productos):
         self.product_list.clear()
         for p in productos:
@@ -738,6 +858,7 @@ class ProductDialogBase:
             p for p in self._productos_original
             if texto in p.get("nombre", "").lower()
             or texto in p.get("codigo", "").lower()
+            or texto in (p.get("sku", "") or "").lower()
             or texto in (
                 f"{p.get('nombre', '')} | Código: {p.get('codigo', '')} | Stock: {p.get('stock', 0)}"
                 f"{' | Lote: ' + p.get('codigo_lote', '') if p.get('codigo_lote') else ''} | "
@@ -751,6 +872,77 @@ class ProductDialogBase:
                 self._actualizar_presentacion_combo()
             except Exception:
                 logger.debug("No se pudo refrescar presentaciones tras filtrar productos", exc_info=True)
+
+    def _warn_lote_insuficiente(self, lote: Mapping[str, Any], cantidad_base: float | Decimal) -> None:
+        try:
+            cantidad_val = float(cantidad_base)
+        except Exception:
+            return
+        if cantidad_val <= 0:
+            return
+        try:
+            stock_val = float(lote.get("stock", 0) or 0)
+        except Exception:
+            stock_val = 0.0
+        if stock_val >= cantidad_val:
+            return
+
+        producto_id = lote.get("producto_id")
+        if producto_id in (None, ""):
+            return
+        productos = getattr(self, "_productos_original", []) or []
+        lotes_producto = [p for p in productos if p.get("producto_id") == producto_id]
+        if not lotes_producto:
+            return
+
+        lote_id = lote.get("lote_id")
+        start_idx = None
+        for idx, entry in enumerate(lotes_producto):
+            if entry.get("lote_id") == lote_id:
+                start_idx = idx
+                break
+        if start_idx is None:
+            start_idx = 0
+        cadena = lotes_producto[start_idx:]
+
+        def _lote_label(entry: Mapping[str, Any]) -> str:
+            try:
+                stock_entry = float(entry.get("stock", 0) or 0)
+            except Exception:
+                stock_entry = 0.0
+            if stock_entry < 0 or entry.get("es_lote_negativo"):
+                return "lote negativo"
+            codigo = str(entry.get("codigo_lote") or "").strip()
+            if codigo:
+                return f"lote {codigo}"
+            return f"lote {entry.get('lote_id')}"
+
+        mensajes = []
+        restante = cantidad_val
+        prev = None
+        for current in cadena:
+            if prev is not None and restante > 0:
+                mensajes.append(
+                    f"El {_lote_label(prev)} no tiene suficiente; se consumirá el {_lote_label(current)}."
+                )
+            try:
+                stock_current = float(current.get("stock", 0) or 0)
+            except Exception:
+                stock_current = 0.0
+            if stock_current > 0:
+                restante -= stock_current
+            prev = current
+            if restante <= 0:
+                break
+
+        if restante > 0:
+            restante_disp = int(restante) if float(restante).is_integer() else round(restante, 4)
+            mensajes.append(
+                f"No hay suficiente stock; se tomará un lote negativo por {restante_disp} unidades."
+            )
+
+        if mensajes:
+            QMessageBox.information(self, "Lotes", "\n".join(mensajes))
 
     def _fill_presentaciones_combo(self, combo: QComboBox, producto: Mapping[str, Any] | None) -> None:
         """Llena un combo con la unidad base y las presentaciones del producto."""
@@ -954,10 +1146,69 @@ QHeaderView::section {
                     item = form.itemAt(row, role)
                     if item is not None and item.widget() is not None:
                         item.widget().setVisible(False)
+
+    def _refresh_remision_fields(self, force: bool = True) -> None:
+        """Actualiza No. Remisión y Orden No. si los campos existen."""
+        if not hasattr(self, "no_remision_edit") or not hasattr(self, "orden_no_edit"):
+            return
+        logger.warning(
+            "POS: refresh_remision inicio force=%s no_remision=%s orden_no=%s",
+            force,
+            self.no_remision_edit.text().strip(),
+            self.orden_no_edit.text().strip(),
+        )
+        if not force:
+            if self.no_remision_edit.text().strip() and self.orden_no_edit.text().strip():
+                return
+        _, remision = peek_next_from_last_envio(self.db, "03")
+        if not remision:
+            _, remision = peek_next_correlativo(self.db, "03")
+        if not remision:
+            logger.warning("POS: refresh_remision sin remision calculada")
+            return
+        if force or not self.no_remision_edit.text().strip():
+            self.no_remision_edit.setText(remision)
+        if force or not self.orden_no_edit.text().strip():
+            self.orden_no_edit.setText(remision)
+        logger.warning(
+            "POS: refresh_remision actualizado remision=%s no_remision=%s orden_no=%s",
+            remision,
+            self.no_remision_edit.text().strip(),
+            self.orden_no_edit.text().strip(),
+        )
     def _abrir_selector_cliente(self):
         selector = ClienteSelectorDialog(self.db, self)
         if selector.exec_():
             self._set_cliente_actual(selector.get_selected_cliente())
+            self._refresh_remision_fields(force=True)
+            self._mostrar_aviso_verificacion_cliente()
+
+    def _mostrar_aviso_verificacion_cliente(self):
+        if not getattr(self, "selected_cliente", None):
+            return
+        aviso = QMessageBox(self)
+        aviso.setIcon(QMessageBox.Information)
+        aviso.setWindowTitle("Verificacion de datos del cliente")
+        aviso.setText(
+            "Asegurese de que los datos del cliente estan completos y correctos, "
+            "datos mal ingresados pueden causar problemas serios al momento de enviar una factura."
+        )
+        btn_ver = aviso.addButton("Ver datos del cliente", QMessageBox.ActionRole)
+        btn_cerrar = aviso.addButton("Cerrar", QMessageBox.RejectRole)
+        for btn in (btn_ver, btn_cerrar):
+            if btn is not None:
+                btn.setStyleSheet("QPushButton { border: 1px solid #000; }")
+        aviso.exec_()
+        if aviso.clickedButton() == btn_ver:
+            self._abrir_ver_datos_cliente()
+
+    def _abrir_ver_datos_cliente(self):
+        cliente = getattr(self, "selected_cliente", None)
+        if not cliente:
+            QMessageBox.information(self, "Cliente", "No hay cliente seleccionado.")
+            return
+        dialog = ClienteDialog(self, cliente=cliente, read_only=True)
+        dialog.exec_()
 
     def _abrir_crear_cliente(self):
         # Busca manager y db de forma robusta y loguea el flujo
@@ -1051,6 +1302,31 @@ QHeaderView::section {
     def _set_cliente_actual(self, cli):
         if not cli:
             return
+        dep_raw = get_field(cli, "departamento", None)
+        muni_raw = get_field(cli, "municipio", None)
+        dep_norm = str(dep_raw).strip() if dep_raw not in (None, "") else ""
+        muni_norm = str(muni_raw).strip() if muni_raw not in (None, "") else ""
+        if dep_norm.isdigit():
+            dep_norm = dep_norm.zfill(2)
+        if muni_norm.isdigit():
+            muni_norm = muni_norm.zfill(2)
+        if not dep_norm or not muni_norm:
+            respuesta = QMessageBox.question(
+                self,
+                "Dirección genérica",
+                (
+                    "Este cliente no tiene departamento y municipio asignado. "
+                    "El sistema automáticamente seleccionará San Salvador.\n\n"
+                    "¿Desea continuar con San Salvador como dirección genérica?"
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if respuesta != QMessageBox.Yes:
+                return
+            cli = dict(cli)
+            cli["departamento"] = "06"
+            cli["municipio"] = "23"
         nombre = get_field(cli, "nombre", "") or get_field(cli, "codigo", "")
         nit = get_field(cli, "nit", "") or ""
         dui = get_field(cli, "dui", "") or ""
@@ -1117,10 +1393,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         parent=None,
         db=None,
         venta_extra=None,
+        refresh_callback=None,
     ):
         super().__init__(parent)
         self.manager = getattr(parent, "manager", None)
         self.db = db or (self.manager.db if self.manager and hasattr(self.manager, "db") else None)
+        self.refresh_callback = refresh_callback
         self.setWindowTitle("Registrar Venta")
         self.setMinimumSize(0, 0)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -1173,6 +1451,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             else:
                 self.Distribuidor_combo.addItems(Distribuidores)
         top_row.addWidget(self.Distribuidor_combo, 1)
+        self.refresh_btn = QPushButton("Refrescar")
+        self.refresh_btn.setStyleSheet(
+            "QPushButton { border: 1px solid #94a3b8; border-radius: 6px; padding: 4px 10px; background: #f8fafc; }"
+            "QPushButton:hover { background: #eef2f7; }"
+        )
+        top_row.addWidget(self.refresh_btn)
         productos_layout.addLayout(top_row)
 
         self.product_search = QLineEdit()
@@ -1180,6 +1464,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         productos_layout.addWidget(self.product_search)
 
         self.product_list = QListWidget()
+        productos = self._merge_virtual_products(productos)
         self._productos_original = list(productos)
         self._mostrar_productos(productos)
         self.product_list.setMinimumHeight(180)
@@ -1384,9 +1669,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         # Combo de vendedor trabajador
         datos_layout.addWidget(QLabel("Vendedor (trabajador):"))
         self.vendedor_combo = QComboBox()
-        self.vendedor_combo.addItem("Sin vendedor")
+        self.vendedor_combo.addItem("Sin vendedor", None)
         for v in vendedores_trabajadores:
-            self.vendedor_combo.addItem(v["nombre"])
+            self.vendedor_combo.addItem(v.get("nombre", ""), v.get("id"))
         datos_layout.addWidget(self.vendedor_combo)
 
         # Comisión para el vendedor
@@ -1573,6 +1858,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         # --- INICIO BLOQUE NUEVO: Actualizar combo de Distribuidor en tiempo real según producto seleccionado ---
         self.product_list.currentRowChanged.connect(self._actualizar_Distribuidor_por_producto)
+        self.refresh_btn.clicked.connect(self._refresh_productos)
         # --- FIN BLOQUE NUEVO ---
 
         # Ajusta el máximo del descuento según el tipo seleccionado
@@ -1588,8 +1874,30 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self._actualizar_presentacion_combo()
         self._actualizar_presentacion_combo()
 
+    def _refresh_productos(self):
+        logger.warning("POS: refrescando inventario en %s", type(self).__name__)
+        if not callable(self.refresh_callback):
+            QMessageBox.warning(self, "Refrescar", "No se pudo refrescar el inventario.")
+            return
+        try:
+            productos = self.refresh_callback()
+        except Exception as exc:
+            QMessageBox.warning(self, "Refrescar", f"No se pudo refrescar el inventario:\n{exc}")
+            return
+        if not productos:
+            QMessageBox.warning(self, "Refrescar", "No hay productos disponibles en inventario.")
+            return
+        self.set_productos_data(productos)
+        self.product_list.setCurrentRow(0)
+        self._actualizar_presentacion_combo()
+        self._actualizar_precio_defecto()
+        self._actualizar_resumen()
+
+    def _refresh_products(self):
+        self._refresh_productos()
+
     def set_productos_data(self, productos_data):
-        self.productos_data = productos_data or []
+        self.productos_data = self._merge_virtual_products(productos_data or [])
         self._productos_original = list(self.productos_data)
         self.productos = list(self.productos_data)
         self.product_list.clear()
@@ -1778,10 +2086,16 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
 
     def get_data(self):
-        vendedor_idx = self.vendedor_combo.currentIndex()
-        vendedor_id = None
-        if vendedor_idx > 0:
-            vendedor_id = self.vendedores_trabajadores[vendedor_idx - 1]["id"]
+        vendedor_id = self.vendedor_combo.currentData()
+        vendedor_nombre = self.vendedor_combo.currentText().strip()
+        if self.vendedor_combo.currentIndex() == 0:
+            vendedor_nombre = ""
+        if isinstance(vendedor_id, str):
+            text = vendedor_id.strip()
+            if text.isdigit():
+                vendedor_id = int(text)
+            else:
+                vendedor_id = None
 
         sumas = 0
         descuentos = 0
@@ -1840,6 +2154,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 if self.Distribuidor_combo.currentIndex() >= 0 else None
             ),
             "vendedor_id": vendedor_id,
+            "vendedor_nombre": vendedor_nombre,
+            "vendedor_nombre": vendedor_nombre,
             "estado": self.estado_combo.currentText(),
             "condicion_operacion": condicion_operacion,
             "pago_plazo": plazo_codigo,
@@ -1988,6 +2304,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             )
 
     def _agregar_a_venta(self):
+        self._refresh_remision_fields(force=True)
         idx = self.product_list.currentRow()
         if idx < 0:
             QMessageBox.warning(self, "Validación", "Seleccione un producto del inventario actual.")
@@ -2007,6 +2324,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         pres_nombre = (self.presentacion_combo.currentText() or "").strip()
         cantidad_base = cantidad_bultos * factor
         precio_base = precio_presentacion / factor if factor else precio_presentacion
+
+        self._warn_lote_insuficiente(lote, cantidad_base)
 
         descuento_valor = self.descuento_spin.value()
         descuento_tipo = self.descuento_tipo_combo.currentText()
@@ -2927,6 +3246,8 @@ class RegisterPurchaseDialog(QDialog):
 
         self.btn_agregar.setObjectName("PrimaryAction")
         self.btn_agregar.setMinimumHeight(44)
+        self.btn_agregar.setAutoDefault(False)
+        self.btn_agregar.setDefault(False)
         left_card_layout.addWidget(self.btn_agregar)
         left_card_layout.addStretch(1)
 
@@ -3139,6 +3460,12 @@ class RegisterPurchaseDialog(QDialog):
         if formatted in ("-0", "-0.0"):
             formatted = "0"
         return f"${formatted}"
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _quantize_money(self, value, exp: str = "0.01") -> Decimal:
         try:
@@ -4172,9 +4499,11 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         parent=None,
         db=None,
         venta_extra=None,
+        refresh_callback=None,
     ):
         super().__init__(parent)
         self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
+        self.refresh_callback = refresh_callback
         self.setWindowTitle("Registrar Venta a Crédito Fiscal")
         self.setMinimumSize(0, 0)
         self.resize(0, 0)
@@ -4227,6 +4556,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             else:
                 self.Distribuidor_combo.addItems(Distribuidores)
         top_row.addWidget(self.Distribuidor_combo, 1)
+        self.refresh_btn = QPushButton("Refrescar")
+        self.refresh_btn.setStyleSheet(
+            "QPushButton { border: 1px solid #94a3b8; border-radius: 6px; padding: 4px 10px; background: #f8fafc; }"
+            "QPushButton:hover { background: #eef2f7; }"
+        )
+        top_row.addWidget(self.refresh_btn)
         productos_layout.addLayout(top_row)
 
         self.product_search = QLineEdit()
@@ -4234,6 +4569,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         productos_layout.addWidget(self.product_search)
 
         self.product_list = QListWidget()
+        productos = self._merge_virtual_products(productos)
         self._productos_original = list(productos)
         self._mostrar_productos(productos)
         self.product_list.setMinimumHeight(100)
@@ -4339,9 +4675,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         carrito_card, carrito_layout = _card("Carrito")
         # Tabla de productos agregados
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels([
-            "Cantidad", "Producto", "Descuento", "Total", "Eliminar"
+            "Cantidad", "Producto", "Precio U.", "Descuento", "Total", "Eliminar"
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -4353,15 +4689,15 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         header_cf.setStretchLastSection(False)
         header_cf.setSectionResizeMode(1, QHeaderView.Interactive)  # Producto
         self.table.setColumnWidth(1, 170)
-        for col, width in [(0, 60), (2, 80)]:
+        for col, width in [(0, 60), (2, 80), (3, 80)]:
             header_cf.setSectionResizeMode(col, QHeaderView.ResizeToContents)
             self.table.setColumnWidth(col, width)
         # Total un poco más ancho y fijo para evitar recortes
-        self.table.setColumnWidth(3, 100)
-        header_cf.setSectionResizeMode(3, QHeaderView.Fixed)
-        # Dar más espacio a eliminar para que no se corte
-        self.table.setColumnWidth(4, 89)
+        self.table.setColumnWidth(4, 100)
         header_cf.setSectionResizeMode(4, QHeaderView.Fixed)
+        # Dar más espacio a eliminar para que no se corte
+        self.table.setColumnWidth(5, 89)
+        header_cf.setSectionResizeMode(5, QHeaderView.Fixed)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.table.setMinimumHeight(170)
         self.table.setMaximumHeight(230)
@@ -4439,9 +4775,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         self.vendedores_trabajadores = vendedores_trabajadores
         self.vendedor_combo = QComboBox()
-        self.vendedor_combo.addItem("Sin vendedor")
+        self.vendedor_combo.addItem("Sin vendedor", None)
         for v in vendedores_trabajadores:
-            self.vendedor_combo.addItem(v["nombre"])
+            self.vendedor_combo.addItem(v.get("nombre", ""), v.get("id"))
         cliente_layout.addWidget(QLabel("Vendedor (trabajador):"))
         cliente_layout.addWidget(self.vendedor_combo)
 
@@ -4674,6 +5010,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.presentacion_combo.currentIndexChanged.connect(self._on_presentacion_changed)
         self.product_search.textChanged.connect(self._filtrar_productos)
         self.product_list.currentRowChanged.connect(self._actualizar_Distribuidor_por_producto)
+        self.refresh_btn.clicked.connect(self._refresh_productos)
 
         if productos:
             self.product_list.setCurrentRow(0)
@@ -4688,8 +5025,30 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self._update_retencion_summary()
         self._install_no_wheel_filter()
 
+    def _refresh_productos(self):
+        logger.warning("POS: refrescando inventario en %s", type(self).__name__)
+        if not callable(self.refresh_callback):
+            QMessageBox.warning(self, "Refrescar", "No se pudo refrescar el inventario.")
+            return
+        try:
+            productos = self.refresh_callback()
+        except Exception as exc:
+            QMessageBox.warning(self, "Refrescar", f"No se pudo refrescar el inventario:\n{exc}")
+            return
+        if not productos:
+            QMessageBox.warning(self, "Refrescar", "No hay productos disponibles en inventario.")
+            return
+        self.set_productos_data(productos)
+        self.product_list.setCurrentRow(0)
+        self._actualizar_presentacion_combo()
+        self._actualizar_precio_defecto()
+        self._actualizar_resumen()
+
+    def _refresh_products(self):
+        self._refresh_productos()
+
     def set_productos_data(self, productos_data):
-        self.productos_data = productos_data or []
+        self.productos_data = self._merge_virtual_products(productos_data or [])
         self._productos_original = list(self.productos_data)
         self.productos = list(self.productos_data)
         self.product_list.clear()
@@ -4844,6 +5203,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.comision_label.setText(f"Comisión: ${comision_disp:.2f}")
 
     def _agregar_a_venta(self):
+        self._refresh_remision_fields(force=True)
         idx = self.product_list.currentRow()
         if idx < 0:
             QMessageBox.warning(self, "Validación", "Seleccione un producto del inventario actual.")
@@ -4864,6 +5224,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         if factor <= 0:
             factor = Decimal("1")
         precio_unitario_base_con_iva = (precio_unitario_con_iva_bulto / factor) if factor else precio_unitario_con_iva_bulto
+
+        self._warn_lote_insuficiente(lote, float(cantidad_base))
 
         descuento_valor = Decimal(str(self.descuento_spin.value()))
         descuento_tipo = self.descuento_tipo_combo.currentText()
@@ -4962,8 +5324,14 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
             producto_texto = item.get("producto_display", item.get("producto", ""))
             self.table.setItem(i, 1, QTableWidgetItem(producto_texto))
-            self.table.setItem(i, 2, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
-            self.table.setItem(i, 3, QTableWidgetItem(f"${item['total']:.2f}"))
+            precio_pres = item.get("precio_presentacion")
+            if precio_pres is None:
+                factor = item.get("presentacion_factor", 1) or 1
+                precio_base = item.get("precio_con_iva", item.get("precio", 0))
+                precio_pres = (precio_base or 0) * factor
+            self.table.setItem(i, 2, QTableWidgetItem(f"${float(precio_pres):.2f}"))
+            self.table.setItem(i, 3, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
+            self.table.setItem(i, 4, QTableWidgetItem(f"${item['total']:.2f}"))
             btn = QPushButton("Eliminar")
             btn.setStyleSheet(
                 "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
@@ -4975,7 +5343,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             cell_layout.setContentsMargins(0, 0, 0, 0)
             cell_layout.setAlignment(Qt.AlignCenter)
             cell_layout.addWidget(btn)
-            self.table.setCellWidget(i, 4, cell)
+            self.table.setCellWidget(i, 5, cell)
 
     def _actualizar_resumen(self):
         total = sum(item.get("total", 0) for item in self.venta_items)
@@ -5177,17 +5545,23 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.accept()
 
     def get_data(self):
-        vendedor_idx = self.vendedor_combo.currentIndex()
-        vendedor_id = None
-        if vendedor_idx > 0:
-            vendedor_id = self.vendedores_trabajadores[vendedor_idx - 1]["id"]
+        vendedor_id = self.vendedor_combo.currentData()
+        vendedor_nombre = self.vendedor_combo.currentText().strip()
+        if self.vendedor_combo.currentIndex() == 0:
+            vendedor_nombre = ""
+        if isinstance(vendedor_id, str):
+            text = vendedor_id.strip()
+            if text.isdigit():
+                vendedor_id = int(text)
+            else:
+                vendedor_id = None
 
         sumas = Decimal("0")
         descuentos = Decimal("0")
         ventas_exentas = Decimal("0")
         ventas_no_sujetas = Decimal("0")
-        iva = Decimal("0")
         q8 = Decimal("0.00000001")
+        q2 = Decimal("0.01")
 
         for item in self.venta_items:
             tipo_fiscal = item.get("tipo_fiscal", "").lower()
@@ -5200,14 +5574,20 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                 descuento_monto = Decimal(str(item.get("descuento_monto", 0)))
                 descuento_base = (descuento_monto / IVA_FACTOR).quantize(q8)
                 descuentos += descuento_base
-                iva += Decimal(str(item.get("iva", 0)))
             elif tipo_fiscal == "venta exenta":
                 ventas_exentas += base
             elif tipo_fiscal == "venta no sujeta":
                 ventas_no_sujetas += base
 
-        subtotal = (sumas - descuentos) + iva
-        total = subtotal + ventas_exentas + ventas_no_sujetas
+        total_gravada_exact = sumas - descuentos
+        if total_gravada_exact < 0:
+            total_gravada_exact = Decimal("0")
+        total_gravada_2 = total_gravada_exact.quantize(q2, rounding=ROUND_HALF_UP)
+        ventas_exentas_2 = ventas_exentas.quantize(q2, rounding=ROUND_HALF_UP)
+        ventas_no_sujetas_2 = ventas_no_sujetas.quantize(q2, rounding=ROUND_HALF_UP)
+        iva_resumen = (total_gravada_2 * IVA_RATE).quantize(q2, rounding=ROUND_HALF_UP)
+        subtotal = total_gravada_2 + iva_resumen
+        total = subtotal + ventas_exentas_2 + ventas_no_sujetas_2
 
         condicion_operacion = self.condicion_pago_combo.currentData()
         if condicion_operacion == 2:
@@ -5248,11 +5628,11 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "fecha_remision": self.fecha_remision.date().toString("yyyy-MM-dd"),
             "sumas": float(sumas.quantize(q8)),
             "descuentos": float(descuentos.quantize(q8)),
-            "iva": float(iva.quantize(q8)),
-            "subtotal": float(subtotal.quantize(q8)),
-            "ventas_exentas": float(ventas_exentas.quantize(q8)),
-            "ventas_no_sujetas": float(ventas_no_sujetas.quantize(q8)),
-            "total": float(total.quantize(q8)),
+            "iva": float(iva_resumen.quantize(q2, rounding=ROUND_HALF_UP)),
+            "subtotal": float(subtotal.quantize(q2, rounding=ROUND_HALF_UP)),
+            "ventas_exentas": float(ventas_exentas_2.quantize(q2, rounding=ROUND_HALF_UP)),
+            "ventas_no_sujetas": float(ventas_no_sujetas_2.quantize(q2, rounding=ROUND_HALF_UP)),
+            "total": float(total.quantize(q2, rounding=ROUND_HALF_UP)),
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
                 self.Distribuidor_combo.currentIndex()
@@ -5416,7 +5796,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         if self.no_remision_edit.text().strip() and self.orden_no_edit.text().strip():
             return
 
-        _, remision = peek_next_correlativo(self.db, "03")
+        _, remision = peek_next_from_last_envio(self.db, "03")
+        if not remision:
+            _, remision = peek_next_correlativo(self.db, "03")
         if not remision:
             return
         if not self.no_remision_edit.text().strip():
@@ -5532,6 +5914,7 @@ class DistribuidorDialog(QDialog):
                 self.municipio_edit,
                 MUNICIPIOS,
                 Distribuidor.get("municipio"),
+                departamento=self.departamento_edit.currentData(),
             )
             self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
             self.tipo_contrato_edit.setText(Distribuidor["tipo_contrato"] if "tipo_contrato" in Distribuidor.keys() else "")
@@ -5655,9 +6038,13 @@ class DistribuidorInfoDialog(QDialog):
         self.setLayout(layout)
 
 class ClienteDialog(QDialog):
-    def __init__(self, parent=None, cliente=None, codigo_sugerido=None):
+    def __init__(self, parent=None, cliente=None, codigo_sugerido=None, read_only: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("Agregar/Editar Cliente")
+        self._read_only = bool(read_only)
+        if self._read_only:
+            self.setWindowTitle("Ver datos del cliente")
+        else:
+            self.setWindowTitle("Agregar/Editar Cliente")
         layout = QVBoxLayout()
 
         self.codigo_edit = QLineEdit()
@@ -5746,8 +6133,14 @@ class ClienteDialog(QDialog):
         layout.addLayout(btns)
         self.setLayout(layout)
 
-        self.btn_ok.clicked.connect(self._validar_y_accept)
-        self.btn_cancel.clicked.connect(self.reject)
+        if self._read_only:
+            self.btn_ok.setText("Cerrar")
+            self.btn_cancel.hide()
+            self.btn_ok.setStyleSheet("QPushButton { border: 1px solid #000; }")
+            self.btn_ok.clicked.connect(self.accept)
+        else:
+            self.btn_ok.clicked.connect(self._validar_y_accept)
+            self.btn_cancel.clicked.connect(self.reject)
 
         if codigo_sugerido and not cliente:
             self.codigo_edit.setText(codigo_sugerido)
@@ -5769,7 +6162,12 @@ class ClienteDialog(QDialog):
             self.email_edit.setText(cliente.get("email", ""))
             self.direccion_edit.setText(cliente.get("direccion", ""))
             _set_combo_value(self.departamento_edit, DEPARTAMENTOS, cliente.get("departamento"))
-            _set_combo_value(self.municipio_edit, MUNICIPIOS, cliente.get("municipio"))
+            _set_combo_value(
+                self.municipio_edit,
+                MUNICIPIOS,
+                cliente.get("municipio"),
+                departamento=self.departamento_edit.currentData(),
+            )
             self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
             tipo_contribuyente = cliente.get("tipoContribuyente")
             if not tipo_contribuyente:
@@ -5778,6 +6176,8 @@ class ClienteDialog(QDialog):
             if tipo_contribuyente:
                 self.tipo_contribuyente_combo.setCurrentText(str(tipo_contribuyente))
         self._actualizar_tipo_contribuyente_estado(self.tipo_contribuyente_combo.currentText())
+        if self._read_only:
+            self._activar_modo_solo_lectura()
 
 
     def _validar_y_accept(self):
@@ -5863,6 +6263,37 @@ class ClienteDialog(QDialog):
         else:
             self.nombre_comercial_label.setText("Razón social (opcional):")
             self.nombre_comercial_edit.setPlaceholderText("Razón social (opcional)")
+
+    def _activar_modo_solo_lectura(self):
+        aviso = "Ve a la pestaña de clientes para modificar los datos de un cliente."
+        filtro = _ReadOnlyNoticeFilter(aviso, self)
+        self._readonly_notice_filter = filtro
+
+        line_edits = [
+            self.codigo_edit,
+            self.nombre_edit,
+            self.nombre_comercial_edit,
+            self.nrc_edit,
+            self.nit_edit,
+            self.dui_edit,
+            self.giro_edit,
+            self.codActividad_edit,
+            self.telefono_edit,
+            self.email_edit,
+            self.direccion_edit,
+        ]
+        for widget in line_edits:
+            widget.setReadOnly(True)
+            widget.installEventFilter(filtro)
+
+        combos = [
+            self.tipo_contribuyente_combo,
+            self.departamento_edit,
+            self.municipio_edit,
+        ]
+        for combo in combos:
+            combo.setEditable(False)
+            combo.installEventFilter(filtro)
 
 class VendedorDialog(QDialog):
     def __init__(self, Distribuidores, parent=None, vendedor=None, codigo_sugerido=None):
@@ -6046,17 +6477,34 @@ class VentaDetalleDialog(QDialog):
         layout = QVBoxLayout()
 
         vendedores = []
+        trabajadores = []
         productos = []
         clientes = []
         if parent and hasattr(parent, "manager"):
             vendedores = getattr(parent.manager, "_vendedores", [])
+            try:
+                trabajadores = parent.manager.db.get_trabajadores()
+            except Exception:
+                trabajadores = []
             productos = getattr(parent.manager, "_products", [])
             clientes = getattr(parent.manager, "_clientes", [])
         vendedores_dict = {v["id"]: v["nombre"] for v in vendedores}
+        trabajadores_dict = {t["id"]: t.get("nombre", "") for t in trabajadores}
         productos_dict = {p["id"]: p["nombre"] for p in productos}
         clientes_dict = {c["id"]: c.get("nombre", "") for c in clientes}
 
-        vendedor_nombre = vendedores_dict.get(venta.get("vendedor_id"), "Desconocido")
+        vendedor_nombre = (
+            trabajadores_dict.get(venta.get("vendedor_id"))
+            or vendedores_dict.get(venta.get("vendedor_id"), "Desconocido")
+        )
+        log_line = (
+            "VENTA.DETALLE venta_id="
+            f"{venta.get('id')} vendedor_id={venta.get('vendedor_id')} "
+            f"vendedor_resuelto={vendedor_nombre} trabajadores={len(trabajadores_dict)} "
+            f"vendedores={len(vendedores_dict)}"
+        )
+        logger.warning(log_line)
+        print(log_line)
         cliente_nombre = clientes_dict.get(venta.get("cliente_id"), "Desconocido")
 
         layout.addWidget(QLabel(f"Fecha: {venta.get('fecha', '')}"))
@@ -6111,6 +6559,154 @@ class VentaDetalleDialog(QDialog):
         layout.addWidget(table)
         self.setLayout(layout)
 
+
+
+class _WrapAnywhereDelegate(QStyledItemDelegate):
+    """Renderiza texto ajustando palabras largas sin usar elipsis."""
+
+    def _resolve_font(self, opt: QStyleOptionViewItem):
+        if hasattr(opt, "font") and opt.font is not None:
+            return opt.font
+        if hasattr(opt, "fontMetrics") and opt.fontMetrics is not None:
+            try:
+                return opt.fontMetrics.font()
+            except Exception:
+                pass
+        widget = getattr(opt, "widget", None)
+        if widget is not None:
+            try:
+                return widget.font()
+            except Exception:
+                pass
+        return QApplication.font()
+
+    def paint(self, painter, option, index):
+        try:
+            opt = QStyleOptionViewItem(option)
+            self.initStyleOption(opt, index)
+            style = opt.widget.style() if opt.widget else QApplication.style()
+            text = opt.text
+            opt.text = ""
+            style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
+            if not text:
+                return
+            text_rect = style.subElementRect(QStyle.SE_ItemViewItemText, opt, opt.widget)
+            if not text_rect.isValid():
+                text_rect = opt.rect
+            color = opt.palette.color(QPalette.Text)
+            if opt.state & QStyle.State_Selected:
+                color = opt.palette.color(QPalette.HighlightedText)
+            doc = QTextDocument()
+            doc.setDefaultFont(self._resolve_font(opt))
+            text_opt = QTextOption()
+            text_opt.setWrapMode(QTextOption.WrapAnywhere)
+            doc.setDefaultTextOption(text_opt)
+            doc.setTextWidth(text_rect.width())
+            safe_text = html.escape(text)
+            doc.setHtml(f'<span style="color: {color.name()};">{safe_text}</span>')
+            painter.save()
+            try:
+                painter.translate(text_rect.topLeft())
+                doc.drawContents(painter, QRectF(0, 0, text_rect.width(), text_rect.height()))
+            finally:
+                painter.restore()
+        except Exception:
+            logger.exception("WrapAnywhereDelegate paint fallo")
+            super().paint(painter, option, index)
+
+    def sizeHint(self, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text = opt.text
+        if not text:
+            return super().sizeHint(option, index)
+        width = max(opt.rect.width(), 1)
+        doc = QTextDocument()
+        doc.setDefaultFont(self._resolve_font(opt))
+        text_opt = QTextOption()
+        text_opt.setWrapMode(QTextOption.WrapAnywhere)
+        doc.setDefaultTextOption(text_opt)
+        doc.setPlainText(text)
+        doc.setTextWidth(width)
+        size = doc.size()
+        return size.toSize()
+
+
+class _WrapHeaderView(QHeaderView):
+    """Encabezado con salto de linea en textos largos (sin elipsis)."""
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.setTextElideMode(Qt.ElideNone)
+        self.setSectionResizeMode(QHeaderView.Stretch)
+        self.sectionResized.connect(lambda *_: self._update_height())
+        self.sectionCountChanged.connect(lambda *_: self._update_height())
+        QTimer.singleShot(0, self._update_height)
+
+    def _calc_height(self):
+        if self.model() is None:
+            return 0
+        height = 0
+        for idx in range(self.count()):
+            text = self.model().headerData(idx, self.orientation(), Qt.DisplayRole)
+            if text is None:
+                continue
+            width = max(self.sectionSize(idx), 1)
+            doc = QTextDocument()
+            doc.setDefaultFont(self.font())
+            text_opt = QTextOption()
+            text_opt.setWrapMode(QTextOption.WrapAnywhere)
+            doc.setDefaultTextOption(text_opt)
+            doc.setPlainText(str(text))
+            doc.setTextWidth(width)
+            height = max(height, int(doc.size().height()))
+        base = super().sizeHint().height()
+        return max(base, height + 6)
+
+    def _update_height(self):
+        height = self._calc_height()
+        if height <= 0:
+            return
+        if self.minimumHeight() != height or self.maximumHeight() != height:
+            self.setMinimumHeight(height)
+            self.setMaximumHeight(height)
+
+    def paintSection(self, painter, rect, logicalIndex):
+        if not rect.isValid():
+            return
+        try:
+            opt = QStyleOptionHeader()
+            self.initStyleOption(opt)
+            opt.rect = rect
+            opt.section = logicalIndex
+            opt.text = ""
+            self.style().drawControl(QStyle.CE_HeaderSection, opt, painter, self)
+            text = self.model().headerData(logicalIndex, self.orientation(), Qt.DisplayRole)
+            if text is None:
+                return
+            text_rect = self.style().subElementRect(QStyle.SE_HeaderLabel, opt, self)
+            if not text_rect.isValid():
+                text_rect = rect
+            doc = QTextDocument()
+            doc.setDefaultFont(self.font())
+            text_opt = QTextOption()
+            text_opt.setWrapMode(QTextOption.WrapAnywhere)
+            text_opt.setAlignment(self.defaultAlignment())
+            doc.setDefaultTextOption(text_opt)
+            doc.setTextWidth(text_rect.width())
+            color = opt.palette.color(QPalette.ButtonText)
+            safe_text = html.escape(str(text))
+            doc.setHtml(f'<span style="color: {color.name()};">{safe_text}</span>')
+            painter.save()
+            try:
+                painter.translate(text_rect.topLeft())
+                doc.drawContents(painter, QRectF(0, 0, text_rect.width(), text_rect.height()))
+            finally:
+                painter.restore()
+        except Exception:
+            logger.exception("WrapHeaderView paintSection fallo")
+            super().paintSection(painter, rect, logicalIndex)
 
 
 class CompraDetalleDialog(QDialog):
@@ -6567,11 +7163,18 @@ class CompraDetalleDialog(QDialog):
             "Vencimiento",
         ]
         table = QTableWidget(len(detalles), len(headers))
+        table.setHorizontalHeader(_WrapHeaderView(Qt.Horizontal, table))
         table.setHorizontalHeaderLabels(headers)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setWordWrap(True)
+        table.setTextElideMode(Qt.ElideNone)
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        wrap_delegate = _WrapAnywhereDelegate(table)
+        table.setItemDelegateForColumn(0, wrap_delegate)
+        table.setItemDelegateForColumn(12, wrap_delegate)
         for i, d in enumerate(detalles):
             nombre_producto = _detail_product_name(d)
             precio_unitario = d.get("precio_unitario", d.get("precio", 0)) or 0
@@ -6591,6 +7194,8 @@ class CompraDetalleDialog(QDialog):
             table.setItem(i, 12, QTableWidgetItem(str(d.get("registro_sanitario", ""))))
             table.setItem(i, 13, QTableWidgetItem(str(d.get("fecha_vencimiento", ""))))
         table.resizeColumnsToContents()
+        table.resizeRowsToContents()
+        table.horizontalHeader().sectionResized.connect(lambda *_: table.resizeRowsToContents())
         layout.addWidget(table)
 
     @staticmethod
@@ -6916,6 +7521,17 @@ class DatosNegocioDialog(QDialog):
         else:
             self._update_logo_button()
         self._update_razon_social_state()
+        self._install_no_wheel_filter()
+
+    def _install_no_wheel_filter(self):
+        """Bloquea cambios con la rueda en combos y spin para permitir solo click."""
+        blocker = getattr(self, "_wheel_event_filter", None)
+        if blocker is None:
+            blocker = _NoWheelFilter(self)
+            self._wheel_event_filter = blocker
+        for cls in (QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit):
+            for widget in self.findChildren(cls):
+                widget.installEventFilter(blocker)
 
     def _on_save(self):
         try:
@@ -6993,6 +7609,7 @@ class DatosNegocioDialog(QDialog):
             self.municipio,
             MUNICIPIOS,
             str(municipio) if municipio else "",
+            departamento=self.departamento.currentData(),
         )
         self.municipio.setEnabled(bool(self.departamento.currentData()))
         self.complemento.setText(dir_info.get("complemento", ""))
@@ -7411,6 +8028,17 @@ class DTEConfigDialog(QDialog):
             self._update_contingencia_visibility()
             self._apply_negocio_defaults()
         self._update_razon_social_state()
+        self._install_no_wheel_filter()
+
+    def _install_no_wheel_filter(self):
+        """Bloquea cambios con la rueda en combos y spin para permitir solo click."""
+        blocker = getattr(self, "_wheel_event_filter", None)
+        if blocker is None:
+            blocker = _NoWheelFilter(self)
+            self._wheel_event_filter = blocker
+        for cls in (QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit):
+            for widget in self.findChildren(cls):
+                widget.installEventFilter(blocker)
 
     def _confirm_clear_invoices(self):
         reply = QMessageBox.question(

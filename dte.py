@@ -1499,24 +1499,42 @@ def _collect_identity_snapshot(data: dict) -> dict[str, Any]:
     }
 
 
+def _extract_token_nit(claims: Mapping[str, Any]) -> tuple[str, str]:
+    for key in ("c_nit", "nit", "nitUsuario"):
+        digits = solo_digitos(claims.get(key) or "")
+        if digits:
+            return digits, key
+    sub_digits = solo_digitos(claims.get("sub") or "")
+    if sub_digits and len(sub_digits) == catalogos.NIT_LENGTH:
+        return sub_digits, "sub"
+    return "", ""
+
+
 def _validate_token_identity(auth_header: str | None, snapshot: dict[str, Any] | None) -> None:
     if snapshot is None:
         return
     claims = decode_jwt_claims(auth_header or "")
-    token_nit = solo_digitos(
-        claims.get("c_nit")
-        or claims.get("nit")
-        or claims.get("nitUsuario")
-        or claims.get("sub")
-        or ""
-    )
+    token_nit, token_src = _extract_token_nit(claims)
     expected = snapshot.get("expected_nit") or ""
-    status = "OK" if not token_nit or not expected or token_nit == expected else "MISMATCH"
+    enforce = (
+        bool(token_nit)
+        and bool(expected)
+        and len(token_nit) == catalogos.NIT_LENGTH
+        and len(expected) == catalogos.NIT_LENGTH
+    )
+    status = "OK" if not enforce or token_nit == expected else "MISMATCH"
     msg = (
         "IDENTIDAD.TOKEN: token={token} esperado={esperado} estado={estado}"
     ).format(token=token_nit or "-", esperado=expected or "-", estado=status)
     logger.info(msg)
     print(msg)
+    if token_nit and expected and not enforce:
+        logger.info(
+            "IDENTIDAD.TOKEN: omite validacion por longitud token=%s esperado=%s src=%s",
+            len(token_nit),
+            len(expected),
+            token_src or "-",
+        )
     if status == "MISMATCH":
         raise RuntimeError(
             "El token obtenido de Hacienda pertenece al NIT {token} pero se esperaba {esperado}. "
@@ -3173,6 +3191,57 @@ def _derive_remision_from_correlativo(value: int | str | None) -> str | None:
     return digits[-4:].zfill(4)
 
 
+def _extract_correlativo_from_numero_control(numero_control: str | None) -> int | None:
+    """Extrae el correlativo numérico desde un numero de control DTE."""
+
+    if not numero_control:
+        return None
+    texto = str(numero_control).strip()
+    if not texto:
+        return None
+    match = re.search(r"-(\d+)$", texto)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    digits = "".join(ch for ch in texto if ch.isdigit())
+    if not digits:
+        return None
+    tail = digits[-15:]
+    try:
+        return int(tail)
+    except ValueError:
+        return None
+
+
+def peek_current_correlativo(db: DB | None, tipo_dte: str) -> tuple[int | None, str | None]:
+    """Obtiene el correlativo actual y su remision derivada sin modificar la serie."""
+
+    if db is None:
+        return None, None
+    current_getter = getattr(db, "get_dte_correlativo", None)
+    if not callable(current_getter):
+        return None, None
+    datos = _load_datos_negocio()
+    prefijo = str(datos.get("dte_api", {}).get("prefijo_control", ""))
+    sucursal = "001"
+    punto = "001"
+    match = re.search(r"S(\d{3})P(\d{3})", prefijo)
+    if match:
+        sucursal, punto = match.groups()
+    sucursal = _norm3(sucursal)
+    punto = _norm3(punto)
+    try:
+        correlativo = current_getter(tipo_dte, sucursal, punto)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("Fallo al obtener correlativo actual para tipo %s", tipo_dte)
+        return None, None
+    if not correlativo:
+        return None, None
+    return correlativo, _derive_remision_from_correlativo(correlativo)
+
+
 def peek_next_correlativo(db: DB | None, tipo_dte: str) -> tuple[int | None, str | None]:
     """Obtiene el correlativo siguiente y su remisión derivada sin consumirlo."""
 
@@ -3196,6 +3265,52 @@ def peek_next_correlativo(db: DB | None, tipo_dte: str) -> tuple[int | None, str
         logger.exception("Fallo al previsualizar correlativo para tipo %s", tipo_dte)
         return None, None
     return correlativo, _derive_remision_from_correlativo(correlativo)
+
+
+def peek_last_envio_correlativo(db: DB | None, tipo_dte: str) -> tuple[int | None, str | None]:
+    """Lee el último numero de control guardado y deriva su correlativo/remisión."""
+
+    if db is None or not hasattr(db, "cursor"):
+        return None, None
+    if hasattr(db, "ensure_column"):
+        try:
+            db.ensure_column("dte_envios", "numero_control", "TEXT")
+        except Exception:
+            logger.exception("No se pudo asegurar numero_control en dte_envios")
+            return None, None
+    pattern = f"DTE-{tipo_dte}-%"
+    try:
+        row = db.cursor.execute(
+            "SELECT numero_control FROM dte_envios "
+            "WHERE numero_control IS NOT NULL AND UPPER(numero_control) LIKE ? "
+            "ORDER BY id DESC LIMIT 1",
+            (pattern.upper(),),
+        ).fetchone()
+    except Exception:
+        logger.exception("Fallo al leer numero_control en dte_envios")
+        return None, None
+    if not row:
+        return None, None
+    numero_control = row["numero_control"] if hasattr(row, "keys") else row[0]
+    correlativo = _extract_correlativo_from_numero_control(numero_control)
+    remision = None
+    if correlativo is not None:
+        remision = _derive_remision_from_correlativo(correlativo)
+    if remision is None:
+        remision = _derive_remision_from_correlativo(numero_control)
+    if not remision:
+        return None, None
+    return correlativo, remision
+
+
+def peek_next_from_last_envio(db: DB | None, tipo_dte: str) -> tuple[int | None, str | None]:
+    """Calcula el siguiente correlativo/remisión a partir del último DTE enviado."""
+
+    correlativo, _ = peek_last_envio_correlativo(db, tipo_dte)
+    if correlativo is None:
+        return None, None
+    siguiente = correlativo + 1
+    return siguiente, _derive_remision_from_correlativo(siguiente)
 
 
 def generar_numero_control(
@@ -4540,7 +4655,9 @@ def generar_dte_json(
     tribs = resumen.get("tributos") or []
     iva_ref = next((t.get("valor") for t in tribs if t.get("codigo") == TRIBUTO_IVA), resumen.get("ivaPerci1", 0))
     iva_ref = D(str(iva_ref or 0))
-    calc_total = d2(calc_sub_total + iva_ref)
+    iva_rete1 = D(str(resumen.get("ivaRete1", 0) or 0))
+    rete_renta = D(str(resumen.get("reteRenta", 0) or 0))
+    calc_total = d2(calc_sub_total + iva_ref - iva_rete1 - rete_renta)
     if abs(calc_total - D(str(resumen.get("montoTotalOperacion", 0)))) > D("0.01"):
         print(
             f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
@@ -4682,6 +4799,25 @@ def generar_dte_json(
             )
         if resumen.get("pagos"):
             suma_pagos = money(suma_pagos)
+            if abs(total_pagar_dec - suma_pagos) > D("0.01"):
+                iva_rete1 = money(D(str(resumen.get("ivaRete1", 0) or 0)))
+                rete_renta = money(D(str(resumen.get("reteRenta", 0) or 0)))
+                if iva_rete1 > D("0") or rete_renta > D("0"):
+                    try:
+                        resumen["pagos"] = normalizar_pagos(
+                            resumen.get("pagos"),
+                            total_pagar_dec,
+                            tipo_dte=tipo_dte,
+                            condicion=resumen.get("condicionOperacion", 1),
+                        )
+                        suma_pagos = money(
+                            sum(
+                                D(str(p.get("montoPago") or 0))
+                                for p in resumen.get("pagos", [])
+                            )
+                        )
+                    except Exception:
+                        pass
             if abs(total_pagar_dec - suma_pagos) > D("0.01"):
                 raise ValidationError(
                     f"suma pagos {suma_pagos:.2f} no cuadra con totalPagar {total_pagar_dec:.2f}"
@@ -5116,7 +5252,8 @@ def validate_dte_json(
                 else:
                     receptor["numDocumento"] = formatted
                     tipo_doc = tipo_doc or "13"
-            num_doc = solo_digitos(receptor.get("numDocumento"))
+            num_doc_raw = receptor.get("numDocumento")
+            num_doc = solo_digitos(num_doc_raw) if num_doc_raw else ""
             receptor.pop("dui", None)
             nrc_raw = receptor.get("nrc")
             nrc_digits = solo_digitos(nrc_raw) if nrc_raw is not None else ""
@@ -5124,54 +5261,66 @@ def validate_dte_json(
                 receptor["nrc"] = nrc_digits
             else:
                 receptor.pop("nrc", None)
-            if tipo_doc is None:
-                tipo_doc = "36" if receptor.get("nrc") else "13"
+            missing_doc = (
+                tipo_dte == "01"
+                and not persona_juridica_receptor
+                and not num_doc
+                and not (tipo_doc and str(tipo_doc).strip())
+                and not receptor.get("nit")
+                and not receptor.get("nrc")
+            )
+            if missing_doc:
+                receptor.pop("numDocumento", None)
+                receptor.pop("tipoDocumento", None)
             else:
-                tipo_doc = str(tipo_doc)
-            if persona_juridica_receptor and tipo_doc == "13":
-                nit_digits = solo_digitos(receptor.get("nit"))
-                if nit_digits:
-                    tipo_doc = "36"
-                    num_doc = nit_digits
-            allowed = {"36", "13", "37", "03", "02"}
-            if tipo_doc not in allowed:
-                raise ValueError("tipoDocumento inválido en receptor")
-            if tipo_doc == "13":
-                if len(num_doc) != 9:
-                    logger.warning(
-                        "DUI no normalizable; se continúa sin bloquear uuid=%s",
-                        ident_uuid,
-                    )
+                if tipo_doc is None:
+                    tipo_doc = "36" if receptor.get("nrc") else "13"
                 else:
-                    if nrc_raw:
+                    tipo_doc = str(tipo_doc)
+                if persona_juridica_receptor and tipo_doc == "13":
+                    nit_digits = solo_digitos(receptor.get("nit"))
+                    if nit_digits:
+                        tipo_doc = "36"
+                        num_doc = nit_digits
+                allowed = {"36", "13", "37", "03", "02"}
+                if tipo_doc not in allowed:
+                    raise ValueError("tipoDocumento inválido en receptor")
+                if tipo_doc == "13":
+                    if len(num_doc) != 9:
+                        logger.warning(
+                            "DUI no normalizable; se continúa sin bloquear uuid=%s",
+                            ident_uuid,
+                        )
+                    else:
+                        if nrc_raw:
+                            if tipo_dte == "04":
+                                warnings.warn(
+                                    "Se forzó NRC=null porque el documento es DUI",
+                                    UserWarning,
+                                )
+                            else:
+                                warnings.warn(
+                                    "Se removió NRC porque el documento es DUI",
+                                    UserWarning,
+                                )
                         if tipo_dte == "04":
-                            warnings.warn(
-                                "Se forzó NRC=null porque el documento es DUI",
-                                UserWarning,
-                            )
+                            receptor["nrc"] = None
                         else:
-                            warnings.warn(
-                                "Se removió NRC porque el documento es DUI",
-                                UserWarning,
-                            )
+                            receptor.pop("nrc", None)
+                elif tipo_doc == "36":
+                    if len(num_doc) not in (9, 14):
+                        raise ValueError(
+                            "NIT debe tener 9 o 14 dígitos (sin guiones)"
+                        )
+                    if not receptor.get("nrc") or len(receptor["nrc"]) not in (6, 7):
+                        raise ValueError("NRC requerido (6–7 dígitos)")
+                else:
                     if tipo_dte == "04":
                         receptor["nrc"] = None
                     else:
                         receptor.pop("nrc", None)
-            elif tipo_doc == "36":
-                if len(num_doc) not in (9, 14):
-                    raise ValueError(
-                        "NIT debe tener 9 o 14 dígitos (sin guiones)"
-                    )
-                if not receptor.get("nrc") or len(receptor["nrc"]) not in (6, 7):
-                    raise ValueError("NRC requerido (6–7 dígitos)")
-            else:
-                if tipo_dte == "04":
-                    receptor["nrc"] = None
-                else:
-                    receptor.pop("nrc", None)
-            receptor["tipoDocumento"] = tipo_doc
-            receptor["numDocumento"] = num_doc
+                receptor["tipoDocumento"] = tipo_doc
+                receptor["numDocumento"] = num_doc
 
         receptor.pop("giro", None)
         dir_rec = receptor.get("direccion")
@@ -7105,47 +7254,68 @@ def transmitir_dte(
         modo = get_default_modo_transmision()
 
     tipo_dte = str(tipo_dte)
-    venta_extra = {}
-    extra_es_ticket = False
-    if hasattr(db, "get_venta_by_id"):
+    tipo_dte_norm = tipo_dte.zfill(2) if tipo_dte.isdigit() else tipo_dte
+    snapshot_payload = None
+    using_snapshot = False
+    if hasattr(db, "get_snapshot_by_venta"):
         try:
-            venta_row = db.get_venta_by_id(venta_id)
-        except Exception:
-            venta_row = None
-        row_data = venta_row if isinstance(venta_row, dict) else None
-        if row_data is None and venta_row is not None:
-            try:
-                row_data = dict(venta_row)
-            except Exception:
-                row_data = None
-        if isinstance(row_data, dict):
-            raw_extra = row_data.get("extra")
-            if isinstance(raw_extra, str) and raw_extra:
-                try:
-                    venta_extra = json.loads(raw_extra)
-                except Exception:
-                    venta_extra = {}
-            elif isinstance(raw_extra, dict):
-                venta_extra = raw_extra
-    extra_es_ticket = bool(venta_extra.get("es_ticket"))
+            snapshot = db.get_snapshot_by_venta(venta_id)
+        except SnapshotNotFoundError:
+            snapshot = None
+        if snapshot and snapshot.payload:
+            snap_tipo = str(
+                (snapshot.payload.get("identificacion") or {}).get("tipoDte") or ""
+            )
+            snap_tipo_norm = snap_tipo.zfill(2) if snap_tipo.isdigit() else snap_tipo
+            if snap_tipo_norm and snap_tipo_norm == tipo_dte_norm:
+                snapshot_payload = copy.deepcopy(snapshot.payload)
 
-    if tipo_dte == "01" and extra_es_ticket:
-        data = generar_ticket_json(db, venta_id)
+    if snapshot_payload:
+        data = snapshot_payload
+        using_snapshot = True
     else:
-        extra_kwargs = {}
-        if extra_es_ticket and tipo_dte != "01":
-            extra_kwargs["extra"] = {"es_ticket": False}
-        data = generar_dte_json(db, venta_id, tipo_dte=tipo_dte, **extra_kwargs)
+        venta_extra = {}
+        extra_es_ticket = False
+        if hasattr(db, "get_venta_by_id"):
+            try:
+                venta_row = db.get_venta_by_id(venta_id)
+            except Exception:
+                venta_row = None
+            row_data = venta_row if isinstance(venta_row, dict) else None
+            if row_data is None and venta_row is not None:
+                try:
+                    row_data = dict(venta_row)
+                except Exception:
+                    row_data = None
+            if isinstance(row_data, dict):
+                raw_extra = row_data.get("extra")
+                if isinstance(raw_extra, str) and raw_extra:
+                    try:
+                        venta_extra = json.loads(raw_extra)
+                    except Exception:
+                        venta_extra = {}
+                elif isinstance(raw_extra, dict):
+                    venta_extra = raw_extra
+        extra_es_ticket = bool(venta_extra.get("es_ticket"))
+
+        if tipo_dte == "01" and extra_es_ticket:
+            data = generar_ticket_json(db, venta_id)
+        else:
+            extra_kwargs = {}
+            if extra_es_ticket and tipo_dte != "01":
+                extra_kwargs["extra"] = {"es_ticket": False}
+            data = generar_dte_json(db, venta_id, tipo_dte=tipo_dte, **extra_kwargs)
 
     final_tipo = str(data.get("identificacion", {}).get("tipoDte") or "")
     if final_tipo != tipo_dte:
         raise ValueError(
             f"tipoDte generado {final_tipo or 'desconocido'} no coincide con solicitado {tipo_dte}"
         )
-    if final_tipo == "01":
+    if final_tipo == "01" and not using_snapshot:
         recalcular_totales(data, incluir_iva=True)
 
-    data = apply_schema_patch(data)
+    if not using_snapshot:
+        data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
     # La validación de esquema se omite para permitir la transmisión sin
     # interrupciones por inconsistencias.
@@ -7594,11 +7764,22 @@ def _enviar_documento(
     tipo_dte_norm = tipo_dte.zfill(2) if tipo_dte.isdigit() else tipo_dte
     nota_types = {"04", "05", "06"}
     snapshot_data, snapshot_path = _load_existing_snapshot(data)
+    use_snapshot_payload = False
+    if snapshot_data is not None:
+        data = copy.deepcopy(snapshot_data)
+        use_snapshot_payload = True
+        ident = data.get("identificacion") or data.get("identificador") or {}
+        doc_ref = ident.get("numeroControl") or ident.get("codigoGeneracion") or doc_id
+        raw_tipo_dte = ident.get("tipoDte") or ident.get("tipoDocumento")
+        tipo_dte = str(raw_tipo_dte or "").strip()
+        tipo_dte_norm = tipo_dte.zfill(2) if tipo_dte.isdigit() else tipo_dte
     snapshot_ident = (
         (snapshot_data.get("identificacion") or snapshot_data.get("identificador") or {})
         if snapshot_data
         else {}
     )
+    if use_snapshot_payload and not snapshot_ident:
+        snapshot_ident = ident
     ident_codigo = (ident.get("codigoGeneracion") or "").upper()
     ident_control = (ident.get("numeroControl") or "").upper()
     SUCCESS_STATES = ("TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO")
@@ -7633,21 +7814,22 @@ def _enviar_documento(
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
     today_str = None
-    if snapshot_ident:
-        if snapshot_ident.get("fecEmi"):
-            ident["fecEmi"] = snapshot_ident.get("fecEmi")
-    elif tipo_dte_norm in nota_types:
-        today_str = fecha_emision_hoy_str()
-        if ident.get("fecEmi") != today_str:
-            ident["fecEmi"] = today_str
-    if snapshot_ident and snapshot_ident.get("horEmi"):
-        ident["horEmi"] = snapshot_ident.get("horEmi")
-    else:
-        ident["horEmi"] = datetime.now(TZ_EL_SALVADOR).strftime("%H:%M:%S")
-    if "identificacion" in data:
-        data["identificacion"] = ident
-    elif "identificador" in data:
-        data["identificador"] = ident
+    if not use_snapshot_payload:
+        if snapshot_ident:
+            if snapshot_ident.get("fecEmi"):
+                ident["fecEmi"] = snapshot_ident.get("fecEmi")
+        elif tipo_dte_norm in nota_types:
+            today_str = fecha_emision_hoy_str()
+            if ident.get("fecEmi") != today_str:
+                ident["fecEmi"] = today_str
+        if snapshot_ident and snapshot_ident.get("horEmi"):
+            ident["horEmi"] = snapshot_ident.get("horEmi")
+        else:
+            ident["horEmi"] = datetime.now(TZ_EL_SALVADOR).strftime("%H:%M:%S")
+        if "identificacion" in data:
+            data["identificacion"] = ident
+        elif "identificador" in data:
+            data["identificador"] = ident
     auth_host = auth.get_last_auth_host()
     recep_host = urlparse(url).netloc
     if auth_host and recep_host != auth_host:
@@ -7665,27 +7847,28 @@ def _enviar_documento(
         except (TypeError, ValueError):
             resumen = {}
 
-    try:
-        print("DTE: VALIDATE_IN", list(resumen.keys()))
-        if _resumen_allows_condicion_operacion(tipo_dte_norm):
-            condicion = normalize_condicion_operacion(resumen.get("condicionOperacion"))
-            resumen["condicionOperacion"] = condicion
-            validate_pagos_basico(resumen, condicion)
-        else:
-            resumen.pop("condicionOperacion", None)
-        data["resumen"] = resumen
-        print("DTE: VALIDATE_OK")
-    except ValueError as exc:
-        logger.error("ERROR: DTE inválido: %s", exc)
-        raise ValueError(f"DTE inválido: {exc}") from exc
+    if not use_snapshot_payload:
+        try:
+            print("DTE: VALIDATE_IN", list(resumen.keys()))
+            if _resumen_allows_condicion_operacion(tipo_dte_norm):
+                condicion = normalize_condicion_operacion(resumen.get("condicionOperacion"))
+                resumen["condicionOperacion"] = condicion
+                validate_pagos_basico(resumen, condicion)
+            else:
+                resumen.pop("condicionOperacion", None)
+            data["resumen"] = resumen
+            print("DTE: VALIDATE_OK")
+        except ValueError as exc:
+            logger.error("ERROR: DTE inválido: %s", exc)
+            raise ValueError(f"DTE inválido: {exc}") from exc
 
-    _ensure_contingencia_ident_fields(ident, modo)
-    if "identificacion" in data:
-        data["identificacion"] = ident
-    elif "identificador" in data:
-        data["identificador"] = ident
+        _ensure_contingencia_ident_fields(ident, modo)
+        if "identificacion" in data:
+            data["identificacion"] = ident
+        elif "identificador" in data:
+            data["identificador"] = ident
 
-    if snapshot_data is not None:
+    if snapshot_data is not None and not use_snapshot_payload:
         stored_hash = hash_json(snapshot_data)
         current_hash = hash_json(data)
         if current_hash != stored_hash:
@@ -8298,21 +8481,6 @@ def enviar_factura(db: DB, venta_id: int, modo: str | None = None, tipo_dte: str
     except Exception:
         # No bloquea el envío; deja el valor original y continúa.
         pass
-    # Rellena datos mínimos de receptor para CF cuando falta documento.
-    try:
-        if tipo_dte == "01":
-            rec = data.setdefault("receptor", {}) or {}
-            tipo_doc = str(rec.get("tipoDocumento") or "").strip()
-            num_doc = str(rec.get("numDocumento") or "").strip()
-            if not num_doc:
-                rec["tipoDocumento"] = "36"
-                rec["numDocumento"] = "00000000000000"
-            elif tipo_doc == "13" and len(num_doc) < 10:
-                # DUI inválido; cae a genérico
-                rec["tipoDocumento"] = "36"
-                rec["numDocumento"] = "00000000000000"
-    except Exception:
-        pass
 
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
@@ -8335,7 +8503,14 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     if modo is None:
         modo = get_default_modo_transmision()
 
-    _ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
+    try:
+        _ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
+    except SnapshotNotFoundError as exc:
+        logger.warning(
+            "SNAPSHOT faltante nota_id=%s venta_id=%s; usando respaldo JSON si existe",
+            nota_id,
+            exc.venta_id,
+        )
 
     config = _load_dte_api_config()
     ambiente_cfg = str(config.get("ambiente") or "").strip().lower()
@@ -8544,7 +8719,14 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     if modo is None:
         modo = get_default_modo_transmision()
 
-    _ensure_nota_snapshot(db, nota_id, expected_tipo="debito")
+    try:
+        _ensure_nota_snapshot(db, nota_id, expected_tipo="debito")
+    except SnapshotNotFoundError as exc:
+        logger.warning(
+            "SNAPSHOT faltante nota_id=%s venta_id=%s; usando respaldo JSON si existe",
+            nota_id,
+            exc.venta_id,
+        )
 
     config = _load_dte_api_config()
     ambiente_cfg = str(config.get("ambiente") or "").strip().lower()

@@ -38,6 +38,7 @@ import re
 import logging
 import glob
 import hashlib
+import random
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, Tuple
 from copy import deepcopy
@@ -91,6 +92,7 @@ from paths import (
     FACTURAS_ARCHIVE_CF_DIR,
     FACTURAS_ARCHIVE_CREDITO_DIR,
     resolve_user_visible_path,
+    ensure_user_dir,
 )
 import tempfile
 import subprocess
@@ -114,7 +116,7 @@ from dialogs.anular_factura_dialog import AnularFacturaDialog
 from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
 from dialogs.dialogs import RetencionIVADialog
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from utils.monto import iva_item, monto_a_texto_sv
+from utils.monto import iva_item, monto_a_texto_sv, to_base_iva
 from utils.snapshot import SnapshotNotFoundError
 from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
 from utils.fecha import TZ_EL_SALVADOR
@@ -152,6 +154,7 @@ SIGNER_DOWN_WARNING = (
     "probabilidades de ser rechazado, se recomienda iniciar el firmador en "
     "configuración y luego enviar el DTE"
 )
+TEST_BATCH_COUNT = 10
 
 # Directory where debit notes will be stored
 # Paths are provided by ``paths`` to keep user data outside the installation
@@ -2169,6 +2172,7 @@ class FacturacionTab(QWidget):
         self.btn_retencion = QPushButton("Retención IVA")
         self.btn_imprimir = QPushButton("Imprimir")
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
+        self.btn_compartir = QPushButton("Compartir")
         self.btn_eliminar = QPushButton("Eliminar")
         self.btn_eliminar.setStyleSheet(
             "background-color: #b71c1c; color: #fff; border-radius: 6px;",
@@ -2181,6 +2185,7 @@ class FacturacionTab(QWidget):
             self.btn_retencion,
             self.btn_imprimir,
             self.btn_abrir_pdf,
+            self.btn_compartir,
             self.btn_eliminar,
         ]
         custom_widths = {
@@ -2191,6 +2196,7 @@ class FacturacionTab(QWidget):
             self.btn_enviar: 45,
             self.btn_imprimir: 65,
             self.btn_abrir_pdf: 66,
+            self.btn_compartir: 80,
             self.btn_eliminar: 80,
         }
         for b in button_lineup:
@@ -2211,9 +2217,11 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_retencion)
         btns.addWidget(self.btn_imprimir)
         btns.addWidget(self.btn_abrir_pdf)
+        btns.addWidget(self.btn_compartir)
         btns.addWidget(self.btn_eliminar)
         btns.addStretch(1)
         left_layout.addLayout(btns)
+        self._setup_test_actions(left_layout)
 
         preview_container = QWidget()
         preview_layout = QVBoxLayout(preview_container)
@@ -2243,11 +2251,14 @@ class FacturacionTab(QWidget):
         self.table.itemSelectionChanged.connect(self.show_invoice)
         self.table.itemSelectionChanged.connect(self._update_send_btn)
         self.table.itemDoubleClicked.connect(self.mostrar_detalle_factura)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_table_context_menu)
 
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
         self.btn_evento_contingencia.clicked.connect(self._enviar_evento_contingencia)
         self.btn_imprimir.clicked.connect(self.print_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
+        self.btn_compartir.clicked.connect(self.share_selected_invoice)
         self.btn_eliminar.clicked.connect(self.delete_invoice)
 
         self._setup_declaracion_tab()
@@ -2999,6 +3010,1028 @@ class FacturacionTab(QWidget):
             self.date_to.setEnabled(True)
         self.load_invoices()
 
+    def _is_test_env(self) -> bool:
+        try:
+            return dte.resolve_ambiente(None) == "00"
+        except Exception:
+            return False
+
+    def _setup_test_actions(self, left_layout: QVBoxLayout) -> None:
+        if not self._is_test_env():
+            return
+
+        test_layout = QHBoxLayout()
+        test_layout.setSpacing(6)
+        test_layout.addWidget(QLabel("Pruebas:"))
+
+        self.btn_pruebas_cf = QPushButton("CF x10")
+        self.btn_pruebas_ccf = QPushButton("CCF x10")
+        self.btn_pruebas_nc = QPushButton("Nota crédito x10")
+        self.btn_pruebas_nr = QPushButton("Nota remisión x10")
+        self.btn_pruebas_fse = QPushButton("FSE x10")
+        self.btn_pruebas_cr = QPushButton("Retención x10")
+
+        self.btn_pruebas_cf.clicked.connect(self._run_test_cf_batch)
+        self.btn_pruebas_ccf.clicked.connect(self._run_test_ccf_batch)
+        self.btn_pruebas_nc.clicked.connect(self._run_test_nc_batch)
+        self.btn_pruebas_nr.clicked.connect(self._run_test_nr_batch)
+        self.btn_pruebas_fse.clicked.connect(self._run_test_fse_batch)
+        self.btn_pruebas_cr.clicked.connect(self._run_test_retencion_batch)
+
+        custom_widths = {
+            self.btn_pruebas_cf: 70,
+            self.btn_pruebas_ccf: 80,
+            self.btn_pruebas_nc: 110,
+            self.btn_pruebas_nr: 120,
+            self.btn_pruebas_fse: 70,
+            self.btn_pruebas_cr: 100,
+        }
+        for btn in (
+            self.btn_pruebas_cf,
+            self.btn_pruebas_ccf,
+            self.btn_pruebas_nc,
+            self.btn_pruebas_nr,
+            self.btn_pruebas_fse,
+            self.btn_pruebas_cr,
+        ):
+            width = custom_widths.get(btn, 100)
+            btn.setStyleSheet(
+                f"min-width:{width}px; max-width:{width}px; padding:6px 8px; font-size:12px;"
+            )
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+            test_layout.addWidget(btn)
+
+        test_layout.addStretch(1)
+        left_layout.addLayout(test_layout)
+
+    def _run_test_cf_batch(self) -> None:
+        self._run_test_invoice_batch(
+            tipo_dte="01", label="Consumidor final", require_nit=False
+        )
+
+    def _run_test_ccf_batch(self) -> None:
+        self._run_test_invoice_batch(
+            tipo_dte="03", label="Crédito fiscal", require_nit=True
+        )
+
+    def _run_test_nc_batch(self) -> None:
+        self._run_test_note_batch(tipo="credito", label="Nota crédito")
+
+    def _run_test_nr_batch(self) -> None:
+        self._run_test_note_batch(tipo="remision", label="Nota remisión")
+
+    def _run_test_fse_batch(self) -> None:
+        self._run_test_subject_excluded_batch()
+
+    def _run_test_retencion_batch(self) -> None:
+        self._run_test_retencion_cr_batch()
+
+    def _get_test_clients(self, *, require_nit: bool) -> list[dict]:
+        try:
+            clientes = self.manager.db.get_clientes() or []
+        except Exception:
+            clientes = list(getattr(self.manager, "_clientes", []))
+
+        if not require_nit:
+            return [dict(c) for c in clientes]
+
+        filtrados = []
+        for c in clientes:
+            nit = solo_digitos(c.get("nit") or "")
+            nrc = solo_digitos(c.get("nrc") or "")
+            if nit and nrc:
+                filtrados.append(dict(c))
+        return filtrados
+
+    def _get_test_products(self) -> list[dict]:
+        try:
+            productos = self.manager.db.get_productos() or []
+        except Exception:
+            productos = list(getattr(self.manager, "_products", []))
+        return [dict(p) for p in productos]
+
+    @staticmethod
+    def _pick_random(items: list[dict]) -> dict | None:
+        if not items:
+            return None
+        return random.choice(items)
+
+    @staticmethod
+    def _coerce_price(producto: Mapping[str, Any]) -> float:
+        for key in (
+            "precio_venta_minorista",
+            "precio",
+            "precio_venta_mayorista",
+            "precio_compra",
+        ):
+            raw = producto.get(key)
+            try:
+                val = float(raw)
+            except Exception:
+                continue
+            if val > 0:
+                return val
+        return 1.0
+
+    def _build_test_line(self, producto: Mapping[str, Any]) -> dict[str, Any]:
+        cantidad = random.randint(1, 3)
+        precio = self._coerce_price(producto)
+        total = Decimal(str(precio)) * Decimal(str(cantidad))
+        base, iva = to_base_iva(total)
+        return {
+            "producto": producto,
+            "cantidad": cantidad,
+            "precio": precio,
+            "total": total,
+            "base": base,
+            "iva": iva,
+        }
+
+    def _create_test_sale_cf(self, cliente: Mapping[str, Any], producto: Mapping[str, Any]) -> int:
+        db = self.manager.db
+        linea = self._build_test_line(producto)
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cliente_id = cliente.get("id")
+        venta_id = db.add_venta(
+            fecha,
+            float(linea["total"]),
+            cliente_id=cliente_id,
+            extra={"precios_incluyen_iva": True},
+            estado="Pagada",
+        )
+        db.add_detalle_venta(
+            venta_id,
+            producto.get("id"),
+            linea["cantidad"],
+            linea["precio"],
+            iva=float(linea["iva"]),
+            tipo_fiscal="Gravada",
+        )
+        return venta_id
+
+    def _create_test_sale_ccf(
+        self,
+        cliente: Mapping[str, Any],
+        producto: Mapping[str, Any],
+        *,
+        retencion_enabled: bool = False,
+    ) -> int:
+        db = self.manager.db
+        linea = self._build_test_line(producto)
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        nit = solo_digitos(cliente.get("nit") or "")
+        nrc = solo_digitos(cliente.get("nrc") or "")
+        giro = str(cliente.get("giro") or "").strip() or "Giro no especificado"
+        total = float(linea["total"])
+        sumas = float(linea["base"])
+        iva_val = float(linea["iva"])
+        subtotal = float(linea["base"])
+        extra = {"precios_incluyen_iva": True}
+        if retencion_enabled:
+            base_ret = linea["base"]
+            if base_ret < Decimal("1.00"):
+                base_ret = Decimal("1.00")
+            reten = (base_ret * Decimal("0.01")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            extra["_ui_retencion"] = {
+                "enabled": True,
+                "codigoRetencionMH": "22",
+                "tasa": 1.0,
+                "base": float(base_ret),
+                "baseSujeta": float(base_ret),
+                "montoRetenido": float(reten),
+                "ivaRetenido": float(reten),
+            }
+        venta_id = db.add_venta_credito_fiscal(
+            cliente_id=cliente.get("id"),
+            fecha=fecha,
+            total=total,
+            nrc=nrc,
+            nit=nit,
+            giro=giro,
+            sumas=sumas,
+            descuentos=0,
+            iva=iva_val,
+            subtotal=subtotal,
+            ventas_exentas=0,
+            ventas_no_sujetas=0,
+            total_letras=monto_a_texto_sv(total),
+            extra=extra,
+            estado="Pagada",
+        )
+        db.add_detalle_venta(
+            venta_id,
+            producto.get("id"),
+            linea["cantidad"],
+            linea["precio"],
+            iva=iva_val,
+            tipo_fiscal="Gravada",
+        )
+        return venta_id
+
+    def _get_test_clients_with_activity(self) -> list[dict]:
+        clientes = self._get_test_clients(require_nit=True)
+        filtrados = []
+        for c in clientes:
+            cod = str(c.get("codActividad") or "").strip()
+            desc = str(c.get("giro") or c.get("descActividad") or "").strip()
+            telefono = str(c.get("telefono") or "").strip()
+            if cod and desc and telefono:
+                filtrados.append(dict(c))
+        return filtrados
+
+    def _ensure_test_client_with_activity(self) -> list[dict]:
+        clientes = self._get_test_clients_with_activity()
+        if clientes:
+            return clientes
+        db = self.manager.db
+        cliente_id = None
+        for _ in range(3):
+            nit = f"{random.randint(10**13, 10**14 - 1):014d}"
+            nrc = f"{random.randint(10**6, 10**7 - 1):07d}"
+            try:
+                db.add_cliente(
+                    "Cliente Retención Prueba",
+                    nrc,
+                    nit,
+                    "",
+                    "GIRO PRUEBA",
+                    "00000000",
+                    "retencion@example.com",
+                    "San Salvador",
+                    "06",
+                    "23",
+                    codActividad="0000",
+                )
+                cliente_id = db.cursor.lastrowid
+                break
+            except Exception as exc:
+                logger.warning("No se pudo crear cliente de prueba: %s", exc)
+        if not cliente_id:
+            return []
+        try:
+            cliente = db.get_cliente(cliente_id)
+        except Exception:
+            cliente = None
+        return [cliente] if cliente else []
+
+    def _venta_has_retencion_enabled(self, venta_id: int) -> bool:
+        try:
+            venta = self.manager.db.get_venta_by_id(venta_id)
+        except Exception:
+            venta = None
+        if not venta:
+            return False
+        extra_raw = venta.get("extra")
+        if isinstance(extra_raw, str):
+            try:
+                extra = json.loads(extra_raw)
+            except Exception:
+                extra = {}
+        elif isinstance(extra_raw, dict):
+            extra = dict(extra_raw)
+        else:
+            extra = {}
+        ret = extra.get("_ui_retencion") or extra.get("retencion_iva")
+        if not isinstance(ret, dict):
+            return False
+        if ret.get("enabled") is not None:
+            return bool(ret.get("enabled"))
+        try:
+            base = float(ret.get("base") or ret.get("baseSujeta") or 0)
+        except Exception:
+            base = 0.0
+        try:
+            reten = float(ret.get("montoRetenido") or ret.get("ivaRetenido") or 0)
+        except Exception:
+            reten = 0.0
+        return base > 0 or reten > 0
+
+    def _venta_has_receptor_activity(self, venta_id: int) -> bool:
+        try:
+            venta = self.manager.db.get_venta_by_id(venta_id)
+        except Exception:
+            venta = None
+        if not venta:
+            return False
+        cliente_id = venta.get("cliente_id")
+        if not cliente_id:
+            return False
+        try:
+            cliente = self.manager.db.get_cliente(cliente_id)
+        except Exception:
+            cliente = None
+        if not cliente:
+            return False
+        cod = str(cliente.get("codActividad") or "").strip()
+        desc = str(cliente.get("giro") or cliente.get("descActividad") or "").strip()
+        telefono = str(cliente.get("telefono") or "").strip()
+        return bool(cod and desc and telefono)
+
+    def _get_subject_excluded_vendors(self) -> list[dict]:
+        try:
+            vendors = self.manager.db.get_vendedores() or []
+        except Exception:
+            vendors = []
+        filtrados = []
+        for v in vendors:
+            if not v.get("is_subject_excluded"):
+                continue
+            nit = solo_digitos(v.get("nit") or "")
+            dui = solo_digitos(v.get("dui") or "")
+            if len(nit) in (9, 14) or len(dui) == 9:
+                filtrados.append(dict(v))
+        return filtrados
+
+    def _ensure_subject_excluded_vendor(self) -> list[dict]:
+        vendors = self._get_subject_excluded_vendors()
+        if vendors:
+            return vendors
+        db = self.manager.db
+        try:
+            db.add_vendedor(
+                "Proveedor SE Prueba",
+                dui="012345678",
+                nit="06141234567890",
+                is_subject_excluded=True,
+            )
+            vendor_id = db.cursor.lastrowid
+        except Exception as exc:
+            logger.warning("No se pudo crear proveedor sujeto excluido: %s", exc)
+            return []
+        try:
+            vendors = [v for v in db.get_vendedores() if v.get("id") == vendor_id]
+        except Exception:
+            vendors = []
+        return vendors
+
+    def _find_fse_json_path(self, compra_id: int) -> str | None:
+        try:
+            base_dir = Path(ensure_user_dir("dtes_sujeto_excluido"))
+        except Exception:
+            return None
+        try:
+            pattern = f"fse_compra_{compra_id}_*.json"
+            candidates = list(base_dir.glob(pattern))
+            if not candidates:
+                candidates = [p for p in base_dir.glob("*.json") if f"_{compra_id}" in p.name]
+        except Exception:
+            return None
+        if not candidates:
+            return None
+        try:
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        except Exception:
+            pass
+        return str(candidates[0])
+
+    def _create_test_subject_excluded_purchase(self, vendor: Mapping[str, Any]) -> tuple[int | None, str | None]:
+        productos = self._get_test_products()
+        producto = self._pick_random(productos) if productos else None
+        precio = self._coerce_price(producto) if producto else random.uniform(5, 25)
+        cantidad = 1
+        total = float(Decimal(str(precio)) * Decimal(str(cantidad)))
+        compra_data = {
+            "fecha": date.today().isoformat(),
+            "producto_id": producto.get("id") if producto else None,
+            "cantidad": cantidad,
+            "precio_unitario": float(precio),
+            "total": total,
+            "Distribuidor_id": vendor.get("Distribuidor_id"),
+            "vendedor_id": vendor.get("id"),
+            "is_subject_excluded_purchase": True,
+        }
+        try:
+            compra_id = self.manager.db.add_compra_detallada(compra_data)
+        except Exception as exc:
+            logger.warning("No se pudo crear compra sujeto excluido: %s", exc)
+            return None, None
+        json_path = self._find_fse_json_path(compra_id)
+        return compra_id, json_path
+
+    def _run_test_subject_excluded_batch(self) -> None:
+        if not self._is_test_env():
+            QMessageBox.warning(
+                self,
+                "Pruebas",
+                "Las funciones de prueba solo están disponibles en ambiente de pruebas.",
+            )
+            return
+
+        db = getattr(self.manager, "db", None)
+        if db is None:
+            QMessageBox.warning(self, "Pruebas", "No se encontró la base de datos.")
+            return
+
+        try:
+            self.manager.refresh_data()
+        except Exception:
+            logger.debug("No se pudo refrescar datos antes de pruebas", exc_info=True)
+
+        rows = get_facturacion_rows(db) or []
+        fse_rows = [
+            row
+            for row in rows
+            if str(row.get("codigo") or "").zfill(2) == "14" and row.get("json")
+        ]
+        pendientes = [
+            row for row in fse_rows if not self._has_successful_envio_status(row.get("envio"))
+        ]
+        seleccion = pendientes[:TEST_BATCH_COUNT]
+        needed = TEST_BATCH_COUNT - len(seleccion)
+
+        if needed > 0:
+            vendors = self._ensure_subject_excluded_vendor()
+            if not vendors:
+                QMessageBox.warning(
+                    self,
+                    "Pruebas",
+                    "No hay proveedores sujeto excluido con NIT/DUI válido.",
+                )
+                return
+            for _ in range(needed):
+                vendor = self._pick_random(vendors)
+                if not vendor:
+                    continue
+                compra_id, json_path = self._create_test_subject_excluded_purchase(vendor)
+                if json_path:
+                    seleccion.append({"json": json_path, "name": f"FSE-{compra_id}"})
+
+        if not seleccion:
+            QMessageBox.warning(
+                self, "Pruebas", "No hay documentos de sujeto excluido para enviar."
+            )
+            return
+
+        sent = 0
+        failures: list[str] = []
+        with loading_dialog(self, f"Enviando {len(seleccion)} FSE de prueba…") as dialog:
+            for idx, row in enumerate(seleccion, start=1):
+                dialog.set_message(f"FSE: {idx}/{len(seleccion)}")
+                json_path = row.get("json")
+                if not json_path:
+                    failures.append("FSE sin JSON.")
+                    continue
+                try:
+                    ident = {}
+                    try:
+                        with open(json_path, "r", encoding="utf-8") as fh:
+                            payload = json.load(fh)
+                        ident = payload.get("identificacion") or payload.get("identificador") or {}
+                    except Exception:
+                        ident = {}
+                    resp = dte.transmitir_dte_orphan(db, json_path)
+                    envio_state = self._map_envio_state(resp.get("estado"))
+                    if self._has_successful_envio_status(envio_state):
+                        sent += 1
+                    else:
+                        detalle = resp.get("detalle") or resp.get("errores") or resp.get("estado")
+                        failures.append(f"FSE {row.get('name')}: {detalle}")
+                    try:
+                        db.registrar_envio_dte(
+                            None,
+                            "orphan",
+                            resp.get("estado"),
+                            resp.get("sello"),
+                            respuesta_json=resp,
+                            codigo_generacion=ident.get("codigoGeneracion"),
+                            numero_control=ident.get("numeroControl"),
+                        )
+                    except Exception:
+                        logger.debug("No se pudo registrar envío FSE", exc_info=True)
+                except Exception as exc:
+                    failures.append(str(exc))
+
+        summary = f"Factura sujeto excluido: enviadas {sent}/{len(seleccion)}."
+        if failures:
+            resumen_fallos = "\n".join(failures[:3])
+            summary = f"{summary}\nFallos: {len(failures)}\n{resumen_fallos}"
+            QMessageBox.warning(self, "Pruebas", summary)
+        else:
+            QMessageBox.information(self, "Pruebas", summary)
+        try:
+            self.refresh_and_reload()
+        except Exception:
+            logger.debug("No se pudo refrescar facturación tras FSE de prueba", exc_info=True)
+
+    def _run_test_retencion_cr_batch(self) -> None:
+        if not self._is_test_env():
+            QMessageBox.warning(
+                self,
+                "Pruebas",
+                "Las funciones de prueba solo están disponibles en ambiente de pruebas.",
+            )
+            return
+
+        db = getattr(self.manager, "db", None)
+        if db is None:
+            QMessageBox.warning(self, "Pruebas", "No se encontró la base de datos.")
+            return
+
+        try:
+            from retenciones.service import RetencionCRService
+        except Exception as exc:
+            QMessageBox.warning(self, "Pruebas", f"No se pudo cargar retenciones: {exc}")
+            return
+
+        try:
+            self.manager.refresh_data()
+        except Exception:
+            logger.debug("No se pudo refrescar datos antes de pruebas", exc_info=True)
+
+        rows = self._get_sent_invoice_rows(require_credito=True)
+        candidatos: list[int] = []
+        for row in rows:
+            venta_id = row.get("venta_id")
+            if not venta_id:
+                continue
+            if db.get_retencion_cr(venta_id):
+                continue
+            if not self._venta_has_retencion_enabled(venta_id):
+                continue
+            if not self._venta_has_receptor_activity(venta_id):
+                continue
+            candidatos.append(int(venta_id))
+
+        creation_attempted = False
+        creation_failures: list[str] = []
+        if not candidatos:
+            resp = QMessageBox.question(
+                self,
+                "Pruebas",
+                (
+                    "No hay facturas CCF con retención disponibles.\n"
+                    "¿Desea crear y enviar 10 facturas con retención para luego generar las retenciones?"
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if resp != QMessageBox.Yes:
+                return
+            creation_attempted = True
+
+        needed = TEST_BATCH_COUNT - len(candidatos)
+        if needed > 0:
+            creation_attempted = True
+            clientes = self._get_test_clients_with_activity()
+            if not clientes:
+                clientes = self._ensure_test_client_with_activity()
+            if not clientes:
+                QMessageBox.warning(
+                    self,
+                    "Pruebas",
+                    "No hay clientes con actividad económica válida para retención.",
+                )
+                return
+            productos = self._get_test_products()
+            if not productos:
+                QMessageBox.warning(
+                    self,
+                    "Pruebas",
+                    "No hay productos registrados para generar CCF con retención.",
+                )
+                return
+            with loading_dialog(
+                self,
+                f"Creando y enviando {needed} CCF con retención…",
+            ) as dialog:
+                for idx in range(needed):
+                    dialog.set_message(f"CCF retención: {idx + 1}/{needed}")
+                    cliente = self._pick_random(clientes)
+                    producto = self._pick_random(productos)
+                    if not cliente or not producto:
+                        creation_failures.append("Faltan datos para crear CCF.")
+                        continue
+                    try:
+                        venta_id = self._create_test_sale_ccf(
+                            cliente, producto, retencion_enabled=True
+                        )
+                        resp = None
+                        resp = dte.enviar_factura(db, venta_id, tipo_dte="03")
+                        envio_state = self._map_envio_state(resp.get("estado"))
+                        if self._has_successful_envio_status(envio_state):
+                            candidatos.append(int(venta_id))
+                        else:
+                            detalle = resp.get("detalle") or resp.get("errores") or resp.get("estado")
+                            creation_failures.append(
+                                f"Venta {venta_id}: {detalle or 'fallo al enviar'}"
+                            )
+                            logger.warning(
+                                "CCF retención no enviada venta_id=%s: %s",
+                                venta_id,
+                                detalle,
+                            )
+                    except Exception as exc:
+                        creation_failures.append(str(exc))
+                        logger.warning("No se pudo generar CCF con retención: %s", exc)
+
+        seleccion = candidatos[:TEST_BATCH_COUNT]
+        if not seleccion:
+            if creation_attempted:
+                resumen_fallos = "\n".join(creation_failures[:3])
+                mensaje = "No se pudieron crear/enviar CCF con retención."
+                if creation_failures:
+                    mensaje = f"{mensaje}\nFallos: {len(creation_failures)}\n{resumen_fallos}"
+                QMessageBox.warning(self, "Pruebas", mensaje)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Pruebas",
+                    "No hay facturas CCF con retención disponibles para CR-07.",
+                )
+            return
+
+        service = RetencionCRService(db)
+        sent = 0
+        failures: list[str] = []
+        with loading_dialog(self, f"Enviando {len(seleccion)} retenciones de prueba…") as dialog:
+            for idx, venta_id in enumerate(seleccion, start=1):
+                dialog.set_message(f"Retención: {idx}/{len(seleccion)}")
+                try:
+                    if not db.get_retencion_cr(venta_id):
+                        service.prepare_cr(venta_id)
+                    resp = service.send_cr(venta_id)
+                    envio_state = self._map_envio_state(resp.get("estado"))
+                    if self._has_successful_envio_status(envio_state):
+                        sent += 1
+                    else:
+                        detalle = resp.get("detalle") or resp.get("descripcionMsg") or resp.get("estado")
+                        failures.append(f"Venta {venta_id}: {detalle}")
+                except Exception as exc:
+                    failures.append(f"Venta {venta_id}: {exc}")
+
+        summary = f"Retenciones: enviadas {sent}/{len(seleccion)}."
+        if failures:
+            resumen_fallos = "\n".join(failures[:3])
+            summary = f"{summary}\nFallos: {len(failures)}\n{resumen_fallos}"
+            QMessageBox.warning(self, "Pruebas", summary)
+        else:
+            QMessageBox.information(self, "Pruebas", summary)
+        try:
+            self.refresh_and_reload()
+        except Exception:
+            logger.debug("No se pudo refrescar facturación tras retenciones de prueba", exc_info=True)
+
+    def _run_test_invoice_batch(self, *, tipo_dte: str, label: str, require_nit: bool) -> None:
+        if not self._is_test_env():
+            QMessageBox.warning(
+                self,
+                "Pruebas",
+                "Las funciones de prueba solo están disponibles en ambiente de pruebas.",
+            )
+            return
+
+        db = getattr(self.manager, "db", None)
+        if db is None:
+            QMessageBox.warning(self, "Pruebas", "No se encontró la base de datos.")
+            return
+
+        try:
+            self.manager.refresh_data()
+        except Exception:
+            logger.debug("No se pudo refrescar datos antes de pruebas", exc_info=True)
+
+        clientes = self._get_test_clients(require_nit=require_nit)
+        if not clientes:
+            QMessageBox.warning(
+                self,
+                "Pruebas",
+                "No hay clientes válidos para generar facturas de prueba.",
+            )
+            return
+
+        productos = self._get_test_products()
+        if not productos:
+            QMessageBox.warning(
+                self,
+                "Pruebas",
+                "No hay productos registrados para generar facturas de prueba.",
+            )
+            return
+
+        created = 0
+        sent = 0
+        failures: list[str] = []
+
+        with loading_dialog(
+            self,
+            f"Enviando {TEST_BATCH_COUNT} facturas de prueba ({label})…",
+        ) as dialog:
+            for idx in range(TEST_BATCH_COUNT):
+                dialog.set_message(f"{label}: {idx + 1}/{TEST_BATCH_COUNT}")
+                cliente = self._pick_random(clientes)
+                producto = self._pick_random(productos)
+                if not cliente or not producto:
+                    failures.append("Faltan datos para crear venta.")
+                    continue
+                try:
+                    if tipo_dte == "03":
+                        venta_id = self._create_test_sale_ccf(cliente, producto)
+                    else:
+                        venta_id = self._create_test_sale_cf(cliente, producto)
+                    created += 1
+                    try:
+                        generate_invoice_pdf(self.manager, venta_id)
+                    except Exception:
+                        logger.debug(
+                            "No se pudo generar PDF de prueba venta_id=%s",
+                            venta_id,
+                            exc_info=True,
+                        )
+                    resp = dte.enviar_factura(db, venta_id, tipo_dte=tipo_dte)
+                    envio_state = self._map_envio_state(resp.get("estado"))
+                    if self._has_successful_envio_status(envio_state):
+                        sent += 1
+                    else:
+                        detalle = resp.get("detalle") or resp.get("errores") or resp.get("estado")
+                        failures.append(f"Venta {venta_id}: {detalle}")
+                except Exception as exc:
+                    failures.append(str(exc))
+
+        summary = (
+            f"{label}: enviadas {sent}/{TEST_BATCH_COUNT}. "
+            f"Creadas {created}."
+        )
+        if failures:
+            resumen_fallos = "\n".join(failures[:3])
+            summary = f"{summary}\nFallos: {len(failures)}\n{resumen_fallos}"
+            QMessageBox.warning(self, "Pruebas", summary)
+        else:
+            QMessageBox.information(self, "Pruebas", summary)
+        try:
+            self.refresh_and_reload()
+        except Exception:
+            logger.debug("No se pudo refrescar facturación tras pruebas", exc_info=True)
+
+    def _get_sent_invoice_rows(self, *, require_credito: bool) -> list[dict]:
+        rows = get_facturacion_rows(self.manager.db) or []
+        result = []
+        for row in rows:
+            if not row.get("venta_id"):
+                continue
+            tipo_desc = str(row.get("tipo") or "").lower()
+            if "nota" in tipo_desc or "ticket" in tipo_desc:
+                continue
+            codigo = str(row.get("codigo") or "").zfill(2)
+            if codigo not in {"01", "03"}:
+                continue
+            if require_credito and codigo != "03":
+                continue
+            if not self._has_successful_envio_status(row.get("envio")):
+                continue
+            result.append(row)
+        return result
+
+    def _get_credit_note_amount(self, venta_id: int, row: Mapping[str, Any]) -> float:
+        db = self.manager.db
+        total = row.get("total")
+        if total in (None, ""):
+            venta = db.get_venta_by_id(venta_id)
+            total = venta.get("total") if venta else 0
+        try:
+            total_dec = Decimal(str(total or 0))
+        except Exception:
+            total_dec = Decimal("0")
+        sum_row = db.cursor.execute(
+            "SELECT COALESCE(SUM(monto),0) AS total FROM notas WHERE venta_id=? AND tipo='credito'",
+            (venta_id,),
+        ).fetchone()
+        total_creditos = Decimal(str(sum_row["total"])) if sum_row else Decimal("0")
+        restante = total_dec - total_creditos
+        if restante <= Decimal("0"):
+            return 0.0
+        monto = restante if restante < Decimal("1.0") else Decimal("1.0")
+        if monto <= Decimal("0"):
+            return 0.0
+        return float(monto)
+
+    def _extract_receptor_from_json(self, json_path: str | None) -> tuple[str | None, str | None]:
+        if not json_path or not os.path.exists(json_path):
+            return None, None
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            return None, None
+        receptor = data.get("receptor") or {}
+        nombre = receptor.get("nombre") or receptor.get("nombreComercial")
+        doc = solo_digitos(
+            receptor.get("numDocumento")
+            or receptor.get("nit")
+            or receptor.get("nrc")
+            or ""
+        )
+        return (str(nombre).strip() if nombre else None), (doc or None)
+
+    def _json_has_receptor_activity(self, json_path: str | None) -> bool:
+        if not json_path or not os.path.exists(json_path):
+            return False
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            return False
+        receptor = data.get("receptor") or {}
+        cod = str(receptor.get("codActividad") or "").strip()
+        desc = str(receptor.get("descActividad") or "").strip()
+        return bool(cod and desc)
+
+    def _snapshot_has_receptor_activity(self, venta_id: int | None) -> bool:
+        if not venta_id:
+            return False
+        try:
+            snapshot = self.manager.db.get_snapshot_by_venta(venta_id)
+        except Exception:
+            snapshot = None
+        if not snapshot or not snapshot.payload:
+            return False
+        receptor = snapshot.payload.get("receptor") or {}
+        cod = str(receptor.get("codActividad") or "").strip()
+        desc = str(receptor.get("descActividad") or "").strip()
+        return bool(cod and desc)
+
+    def _find_any_client_with_doc(self) -> dict | None:
+        clientes = self._get_test_clients(require_nit=False)
+        for cliente in clientes:
+            doc = solo_digitos(
+                cliente.get("nit") or cliente.get("dui") or cliente.get("nrc") or ""
+            )
+            if doc:
+                return cliente
+        return None
+
+    def _build_test_remision_extension(self, venta_id: int | None, row: Mapping[str, Any]) -> dict | None:
+        try:
+            negocio = dte._load_datos_negocio()
+        except Exception:
+            negocio = {}
+
+        entrega_nombre = (
+            negocio.get("nombre")
+            or negocio.get("nombreComercial")
+            or negocio.get("razonSocial")
+            or "Entrega"
+        )
+        entrega_doc = solo_digitos(negocio.get("nit") or negocio.get("dui") or "")
+        if not entrega_doc:
+            entrega_doc = "000000000"
+
+        recibe_nombre = None
+        recibe_doc = None
+
+        if venta_id:
+            try:
+                venta = self.manager.db.get_venta_by_id(venta_id)
+            except Exception:
+                venta = None
+            cliente = None
+            if venta and venta.get("cliente_id"):
+                try:
+                    cliente = self.manager.db.get_cliente(venta.get("cliente_id"))
+                except Exception:
+                    cliente = None
+            if cliente:
+                recibe_nombre = cliente.get("nombre") or cliente.get("nombreComercial")
+                recibe_doc = solo_digitos(
+                    cliente.get("nit") or cliente.get("dui") or cliente.get("nrc") or ""
+                )
+
+        if not recibe_doc:
+            nombre_json, doc_json = self._extract_receptor_from_json(row.get("json"))
+            if doc_json:
+                recibe_doc = doc_json
+            if nombre_json:
+                recibe_nombre = recibe_nombre or nombre_json
+
+        if not recibe_doc:
+            fallback_cliente = self._find_any_client_with_doc()
+            if fallback_cliente:
+                recibe_nombre = (
+                    recibe_nombre
+                    or fallback_cliente.get("nombre")
+                    or fallback_cliente.get("nombreComercial")
+                )
+                recibe_doc = solo_digitos(
+                    fallback_cliente.get("nit")
+                    or fallback_cliente.get("dui")
+                    or fallback_cliente.get("nrc")
+                    or ""
+                )
+
+        if not recibe_doc:
+            return None
+
+        if not recibe_nombre:
+            recibe_nombre = "Recibe"
+
+        return {
+            "nombEntrega": str(entrega_nombre).strip() or "Entrega",
+            "docuEntrega": entrega_doc,
+            "nombRecibe": str(recibe_nombre).strip() or "Recibe",
+            "docuRecibe": recibe_doc,
+            "observaciones": "Prueba automática",
+        }
+
+    def _run_test_note_batch(self, *, tipo: str, label: str) -> None:
+        if not self._is_test_env():
+            QMessageBox.warning(
+                self,
+                "Pruebas",
+                "Las funciones de prueba solo están disponibles en ambiente de pruebas.",
+            )
+            return
+
+        if tipo not in {"credito", "remision"}:
+            QMessageBox.warning(self, "Pruebas", "Tipo de nota inválido.")
+            return
+
+        require_credito = tipo == "credito"
+        base_rows = self._get_sent_invoice_rows(require_credito=require_credito)
+        if tipo == "remision":
+            base_rows = [
+                row
+                for row in base_rows
+                if (
+                    self._snapshot_has_receptor_activity(row.get("venta_id"))
+                    or self._json_has_receptor_activity(row.get("json"))
+                )
+            ]
+        if not base_rows:
+            QMessageBox.warning(
+                self,
+                "Pruebas",
+                "No hay facturas enviadas con datos completos para generar notas de prueba.",
+            )
+            return
+
+        sample_size = min(TEST_BATCH_COUNT, len(base_rows))
+        seleccion = random.sample(base_rows, sample_size)
+
+        sent = 0
+        failures: list[str] = []
+
+        with loading_dialog(
+            self,
+            f"Enviando {sample_size} {label.lower()} de prueba…",
+        ) as dialog:
+            for idx, row in enumerate(seleccion, start=1):
+                dialog.set_message(f"{label}: {idx}/{sample_size}")
+                venta_id = row.get("venta_id")
+                if not venta_id:
+                    failures.append("Factura sin venta_id.")
+                    continue
+                try:
+                    fecha = date.today().isoformat()
+                    if tipo == "credito":
+                        monto = self._get_credit_note_amount(venta_id, row)
+                        if monto <= 0:
+                            failures.append(f"Venta {venta_id}: sin saldo para nota.")
+                            continue
+                        nota_id = self.manager.db.agregar_nota(
+                            "credito",
+                            venta_id,
+                            fecha,
+                            monto,
+                            "Prueba automática",
+                        )
+                        resp = dte.enviar_nota_credito(self.manager.db, nota_id)
+                    else:
+                        extension = self._build_test_remision_extension(venta_id, row)
+                        if not extension:
+                            failures.append(f"Venta {venta_id}: sin datos válidos para extensión.")
+                            continue
+                        nota_id = self.manager.db.agregar_nota(
+                            "remision",
+                            venta_id,
+                            fecha,
+                            0,
+                            "Prueba automática",
+                            detalles={"extension": extension},
+                        )
+                        resp = enviar_nota_remision(self.manager.db, nota_id)
+
+                    envio_state = self._map_envio_state(resp.get("estado"))
+                    if self._has_successful_envio_status(envio_state):
+                        sent += 1
+                    else:
+                        detalle = resp.get("detalle") or resp.get("errores") or resp.get("estado")
+                        failures.append(f"Nota {nota_id}: {detalle}")
+                except Exception as exc:
+                    failures.append(str(exc))
+
+        summary = f"{label}: enviadas {sent}/{sample_size}."
+        if failures:
+            resumen_fallos = "\n".join(failures[:3])
+            summary = f"{summary}\nFallos: {len(failures)}\n{resumen_fallos}"
+            QMessageBox.warning(self, "Pruebas", summary)
+        else:
+            QMessageBox.information(self, "Pruebas", summary)
+        try:
+            self.refresh_and_reload()
+        except Exception:
+            logger.debug("No se pudo refrescar facturación tras notas de prueba", exc_info=True)
+
     def refresh_filters(self):
         """Update vendor filter combos with latest data."""
         self.vendedor_filter.blockSignals(True)
@@ -3479,6 +4512,48 @@ class FacturacionTab(QWidget):
             self._dupe_check_stage = "steady"
             self._schedule_dupe_check(600_000)  # 10 minutos
 
+    def _dedupe_rows_by_control(self, rows):
+        def _tokens(row):
+            tokens = []
+            for key in ("codigo_generacion", "codigoGeneracion"):
+                value = row.get(key)
+                if value not in (None, ""):
+                    tokens.append(str(value).strip().upper())
+            return [t for t in tokens if t]
+
+        def _rank(row):
+            score = 0
+            if row.get("venta_id") is not None:
+                score += 10
+            if row.get("row_type") != "orphan":
+                score += 3
+            estado = str(row.get("estado") or "").strip().lower()
+            if estado and estado != "sin venta":
+                score += 1
+            return score
+
+        token_to_group = {}
+        groups = {}
+        tokenless = []
+        for row in rows:
+            tokens = _tokens(row)
+            if not tokens:
+                tokenless.append(row)
+                continue
+            group_id = None
+            for token in tokens:
+                if token in token_to_group:
+                    group_id = token_to_group[token]
+                    break
+            if group_id is None:
+                group_id = len(groups)
+            existing = groups.get(group_id)
+            if existing is None or _rank(row) > _rank(existing):
+                groups[group_id] = row
+            for token in tokens:
+                token_to_group[token] = group_id
+        return tokenless + list(groups.values())
+
     def load_invoices(self):
         # Remember which invoice is currently selected so that automatic
         # refreshes do not interfere with the user's selection.
@@ -3503,6 +4578,7 @@ class FacturacionTab(QWidget):
                 vendedor_filter_value = str(vendedor_filter_value)
 
         rows = self._scan_documents()
+        rows = self._dedupe_rows_by_control(rows)
 
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
@@ -4531,6 +5607,17 @@ class FacturacionTab(QWidget):
             except Exception:
                 return str(payload)
 
+    @staticmethod
+    def _get_log_snapshot(max_lines: int = 200) -> str:
+        try:
+            from utils.log_buffer import get_log_buffer_text
+        except Exception:
+            return ""
+        try:
+            return get_log_buffer_text(max_lines=max_lines)
+        except Exception:
+            return ""
+
     def _show_send_error_dialog(
         self,
         summary: str,
@@ -4576,6 +5663,29 @@ class FacturacionTab(QWidget):
                     dialog.resize(dialog.width(), max(dialog.height(), 500))
 
             toggle_button.toggled.connect(_toggle_details)
+
+        logs_text = self._get_log_snapshot()
+        if not logs_text:
+            logs_text = "Sin logs disponibles en esta sesion."
+        logs_button = QPushButton("Ver logs")
+        logs_button.setCheckable(True)
+        layout.addWidget(logs_button, alignment=Qt.AlignLeft)
+
+        logs_widget = QPlainTextEdit()
+        logs_widget.setReadOnly(True)
+        logs_widget.setPlainText(logs_text)
+        logs_widget.setLineWrapMode(QPlainTextEdit.NoWrap)
+        logs_widget.setMinimumHeight(200)
+        logs_widget.hide()
+        layout.addWidget(logs_widget)
+
+        def _toggle_logs(checked: bool) -> None:
+            logs_widget.setVisible(checked)
+            logs_button.setText("Ocultar logs" if checked else "Ver logs")
+            if checked and logs_widget.document().blockCount() > 30:
+                dialog.resize(dialog.width(), max(dialog.height(), 500))
+
+        logs_button.toggled.connect(_toggle_logs)
 
         button_box = QDialogButtonBox(QDialogButtonBox.Ok)
         button_box.accepted.connect(dialog.accept)
@@ -4838,7 +5948,11 @@ class FacturacionTab(QWidget):
                             )
                     if resp.get("http_status") in {401, 403}:
                         message = self._auth_error_message(resp, token_msg)
-                        QMessageBox.warning(self, "Enviar a Hacienda", message)
+                        self._show_send_error_dialog(
+                            message,
+                            "Enviar a Hacienda",
+                            resp,
+                        )
                         return
                     estado = resp.get("estado")
                     estado_norm = str(estado or "").strip().lower()
@@ -4913,8 +6027,9 @@ class FacturacionTab(QWidget):
                         logger.exception("No se pudo registrar el estado de envío para el FSE")
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    QMessageBox.critical(
-                        self, "Enviar a Hacienda", "\n".join(exc.errors)
+                    self._show_send_error_dialog(
+                        "\n".join(exc.errors),
+                        "Enviar a Hacienda",
                     )
                 except SnapshotNotFoundError as exc:
                     self._report_snapshot_missing(exc)
@@ -4924,29 +6039,30 @@ class FacturacionTab(QWidget):
                     exc_message = str(exc)
                     if "CERT_INVALID" in exc_message:
                         detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
-                        QMessageBox.critical(
-                            self,
-                            "Firma",
+                        self._show_send_error_dialog(
                             f"Error de firma: certificado inválido. {detalle}",
+                            "Firma",
                         )
                         return
                     if "CERT_NOT_FOUND" in exc_message:
                         detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
-                        QMessageBox.critical(
-                            self,
-                            "Firma",
+                        self._show_send_error_dialog(
                             f"Error de firma: {detalle}",
+                            "Firma",
                         )
                         return
                     if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
-                        QMessageBox.critical(
-                            self,
-                            "Firma",
+                        self._show_send_error_dialog(
                             "Error de firma: no se pudo acceder al certificado.",
+                            "Firma",
                         )
                         return
                     if self._is_auth_runtime_error(exc):
-                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                        logger.warning("AUTH.ERROR: %s", exc)
+                        self._show_send_error_dialog(
+                            token_msg,
+                            "Enviar a Hacienda",
+                        )
                     else:
                         if self._is_signer_connection_error(exc):
                             logger.warning(
@@ -4957,18 +6073,16 @@ class FacturacionTab(QWidget):
                                 return
                         else:
                             logger.exception("Error al enviar documento", exc_info=exc)
-                            QMessageBox.critical(
-                                self,
-                                "Enviar a Hacienda",
+                            self._show_send_error_dialog(
                                 GENERIC_SEND_ERROR,
+                                "Enviar a Hacienda",
                             )
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     logger.exception("Error inesperado al enviar documento", exc_info=exc)
-                    QMessageBox.critical(
-                        self,
-                        "Enviar a Hacienda",
+                    self._show_send_error_dialog(
                         GENERIC_SEND_ERROR,
+                        "Enviar a Hacienda",
                     )
             else:
                 tipo_dte = self._determine_tipo_dte(entry)
@@ -4982,7 +6096,11 @@ class FacturacionTab(QWidget):
                         )  # tickets también se transmiten con tipo "01"
                     if resp.get("http_status") in {401, 403}:
                         message = self._auth_error_message(resp, token_msg)
-                        QMessageBox.warning(self, "Enviar a Hacienda", message)
+                        self._show_send_error_dialog(
+                            message,
+                            "Enviar a Hacienda",
+                            resp,
+                        )
                         return
                     estado = resp.get("estado")
                     estado_norm = str(estado or "").strip().lower()
@@ -5006,6 +6124,17 @@ class FacturacionTab(QWidget):
                                         "No se pudo actualizar el PDF posterior al envío",
                                         exc_info=True,
                                     )
+                    if rtype == "venta":
+                        venta_id = entry.get("venta_id")
+                        sent_states = {"enviado", "aceptado", "procesado", "recibido", "transmitido"}
+                        if venta_id and estado_norm in sent_states:
+                            try:
+                                self.manager.db.update_venta_estado(venta_id, "Pagada")
+                            except Exception:
+                                logger.exception(
+                                    "No se pudo actualizar estado de venta %s tras envío",
+                                    venta_id,
+                                )
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
                         self._show_send_error_dialog(
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
@@ -5055,8 +6184,9 @@ class FacturacionTab(QWidget):
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    QMessageBox.critical(
-                        self, "Enviar a Hacienda", "\n".join(exc.errors)
+                    self._show_send_error_dialog(
+                        "\n".join(exc.errors),
+                        "Enviar a Hacienda",
                     )
                 except SnapshotNotFoundError as exc:
                     self._report_snapshot_missing(exc)
@@ -5066,43 +6196,42 @@ class FacturacionTab(QWidget):
                     exc_message = str(exc)
                     if "CERT_INVALID" in exc_message:
                         detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
-                        QMessageBox.critical(
-                            self,
-                            "Firma",
+                        self._show_send_error_dialog(
                             f"Error de firma: certificado inválido. {detalle}",
+                            "Firma",
                         )
                         return
                     if "CERT_NOT_FOUND" in exc_message:
                         detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
-                        QMessageBox.critical(
-                            self,
-                            "Firma",
+                        self._show_send_error_dialog(
                             f"Error de firma: {detalle}",
+                            "Firma",
                         )
                         return
                     if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
-                        QMessageBox.critical(
-                            self,
-                            "Firma",
+                        self._show_send_error_dialog(
                             "Error de firma: no se pudo acceder al certificado.",
+                            "Firma",
                         )
                         return
                     if self._is_auth_runtime_error(exc):
-                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                        logger.warning("AUTH.ERROR: %s", exc)
+                        self._show_send_error_dialog(
+                            token_msg,
+                            "Enviar a Hacienda",
+                        )
                     else:
                         logger.exception("Error al enviar documento", exc_info=exc)
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             GENERIC_SEND_ERROR,
+                            "Enviar a Hacienda",
                         )
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     logger.exception("Error inesperado al enviar documento", exc_info=exc)
-                    QMessageBox.critical(
-                        self,
-                        "Enviar a Hacienda",
+                    self._show_send_error_dialog(
                         GENERIC_SEND_ERROR,
+                        "Enviar a Hacienda",
                     )
 
         if not send_email:
@@ -5409,6 +6538,46 @@ class FacturacionTab(QWidget):
                 )
         else:
             QMessageBox.warning(self, "Abrir PDF", "No se encontró el archivo PDF.")
+
+    def share_selected_invoice(self):
+        entry = self._selected_entry()
+        if not entry:
+            QMessageBox.warning(self, "Compartir", "No se ha seleccionado ninguna factura.")
+            return
+
+        pdf_path = self._resolve_pdf_path(entry)
+        if not pdf_path:
+            QMessageBox.warning(self, "Compartir", "No se encontró el archivo PDF.")
+            return
+
+        logical_path = os.path.abspath(pdf_path)
+        visible_path = resolve_user_visible_path(logical_path)
+        path_to_use = visible_path or logical_path
+        folder_path = str(Path(path_to_use).parent)
+        opened = False
+        try:
+            if os.name == "nt":
+                subprocess.run(["explorer", "/select,", path_to_use], check=False)
+                opened = True
+            else:
+                opened = QDesktopServices.openUrl(QUrl.fromLocalFile(folder_path))
+        except Exception:
+            opened = QDesktopServices.openUrl(QUrl.fromLocalFile(folder_path))
+
+        try:
+            QApplication.clipboard().setText(path_to_use)
+        except Exception:
+            pass
+
+        if not opened:
+            QMessageBox.information(
+                self,
+                "Compartir",
+                (
+                    "No se pudo abrir la carpeta automáticamente.\n"
+                    f"Ruta del PDF:\n{path_to_use}"
+                ),
+            )
 
     def print_invoice(self):
         entry = self._selected_entry()
@@ -6203,18 +7372,59 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Detalle", "Error al leer el archivo JSON")
             return
 
+        chosen = self._show_invoice_context_menu(entry, factura, data, json_path)
+        if chosen == "ver":
+            self._open_invoice_detail(entry, factura, data, json_path)
+        return
+
+    def _show_table_context_menu(self, pos):
+        item = self.table.itemAt(pos)
+        if item is not None:
+            self.table.selectRow(item.row())
+        entry = self._selected_entry()
+        factura = self._selected_factura()
+        if not entry or not factura:
+            return
+        json_path = factura.get("json")
+        if not json_path or not os.path.exists(json_path):
+            return
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            data = self._normalize_factura_payload(data)
+        except Exception:
+            return
+        chosen = self._show_invoice_context_menu(
+            entry,
+            factura,
+            data,
+            json_path,
+            global_pos=self.table.viewport().mapToGlobal(pos),
+        )
+        if chosen == "ver":
+            self._open_invoice_detail(entry, factura, data, json_path)
+        return
+
+    def _show_invoice_context_menu(self, entry, factura, data, json_path, global_pos=None):
         menu = QMenu(self)
         ver_act = QAction("Ver detalle", self)
         menu.addAction(ver_act)
+        compartir_act = QAction("Compartir PDF", self)
+        menu.addAction(compartir_act)
         anular_act = QAction("Anular", self)
         menu.addAction(anular_act)
-        chosen = menu.exec_(QCursor.pos())
+        chosen = menu.exec_(global_pos or QCursor.pos())
         if chosen == anular_act:
             self._anular_dte(factura, data)
-            return
+            return "anular"
+        if chosen == compartir_act:
+            self.share_selected_invoice()
+            return "compartir"
         if chosen != ver_act:
-            return
+            return None
+        return "ver"
 
+    def _open_invoice_detail(self, entry, factura, data, json_path):
         items = data.get("cuerpoDocumento") or []
         resumen = data.get("resumen") or {}
         ident = data.get("identificacion") or {}
@@ -6451,6 +7661,35 @@ class FacturacionTab(QWidget):
                     )
             except Exception:
                 logger.exception("Error al actualizar estado_ui a Anulado tras anulación")
+            if venta_id:
+                try:
+                    confirm_restore = QMessageBox.question(
+                        self,
+                        "Restaurar inventario",
+                        "La anulación fue exitosa. ¿Desea restaurar el inventario de esta factura?",
+                        QMessageBox.Yes | QMessageBox.No,
+                    )
+                except Exception:
+                    confirm_restore = QMessageBox.No
+                if confirm_restore == QMessageBox.Yes:
+                    restored = False
+                    try:
+                        restored = bool(self.manager.db.restore_inventario_venta(venta_id))
+                    except Exception:
+                        logger.exception("No se pudo restaurar inventario tras anulación")
+                    if restored:
+                        main_window = self.window()
+                        if main_window and hasattr(main_window, "_actualizar_inventario_actual"):
+                            try:
+                                main_window._actualizar_inventario_actual()
+                            except Exception:
+                                logger.exception("Error al actualizar inventario tras anulación")
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "Restaurar inventario",
+                            "No se pudo restaurar el inventario para la factura anulada.",
+                        )
             QMessageBox.information(self, "Anular DTE", "Anulación enviada correctamente")
             self.refresh_and_reload()
         else:
@@ -8714,6 +9953,11 @@ class FacturacionTab(QWidget):
                 logger.exception(
                     "Error al actualizar inventario actual tras eliminar factura"
                 )
+        if main_window and hasattr(main_window, "_refresh_pos_if_available"):
+            try:
+                main_window._refresh_pos_if_available()
+            except Exception:
+                logger.exception("Error al refrescar POS tras eliminar factura")
 
         self._cleanup_invoice_artifacts(
             venta_id,
@@ -8852,6 +10096,19 @@ class FacturacionTab(QWidget):
                 self.manager.refresh_data()
             except Exception:
                 logger.exception("No se pudo refrescar datos tras eliminar facturas")
+            main_window = self.window()
+            if main_window and hasattr(main_window, "_actualizar_inventario_actual"):
+                try:
+                    main_window._actualizar_inventario_actual()
+                except Exception:
+                    logger.exception(
+                        "Error al actualizar inventario actual tras eliminar facturas"
+                    )
+            if main_window and hasattr(main_window, "_refresh_pos_if_available"):
+                try:
+                    main_window._refresh_pos_if_available()
+                except Exception:
+                    logger.exception("Error al refrescar POS tras eliminar facturas")
             self.load_invoices()
             self._clear_preview_files()
 

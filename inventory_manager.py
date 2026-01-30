@@ -10,6 +10,8 @@ import os
 import logging
 import sqlite3
 import threading
+import tempfile
+import time
 from decimal import Decimal as D
 from typing import Mapping
 from pathlib import Path
@@ -76,6 +78,109 @@ class InventoryManagerError(Exception):
     """Errores de dominio del administrador de inventario."""
 
 
+_EXPORT_LOCKS: dict[str, threading.Lock] = {}
+_EXPORT_LOCKS_GUARD = threading.Lock()
+_EXPORT_LOCK_STALE_SECONDS = 15 * 60
+_EXPORT_LOCK_SLEEP_SECONDS = 0.2
+
+
+def _get_export_lock(path: str) -> threading.Lock:
+    with _EXPORT_LOCKS_GUARD:
+        lock = _EXPORT_LOCKS.get(path)
+        if lock is None:
+            lock = threading.Lock()
+            _EXPORT_LOCKS[path] = lock
+    return lock
+
+
+class _ExportLock:
+    def __init__(self, filename: str, timeout: float | None):
+        self._target = os.path.abspath(filename)
+        self._timeout = timeout
+        self._thread_lock = _get_export_lock(self._target)
+        self._lock_path = Path(f"{filename}.lock")
+        self._thread_acquired = False
+        self._file_acquired = False
+
+    def __enter__(self):
+        if self._timeout is None:
+            self._thread_lock.acquire()
+            self._thread_acquired = True
+        else:
+            if not self._thread_lock.acquire(timeout=self._timeout):
+                raise InventoryManagerError(
+                    f"No se pudo exportar inventario a {self._target}: otro guardado esta en progreso."
+                )
+            self._thread_acquired = True
+
+        deadline = None if self._timeout is None else time.monotonic() + self._timeout
+        while True:
+            if self._try_acquire_lockfile():
+                self._file_acquired = True
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                self._release_thread_lock()
+                raise InventoryManagerError(
+                    f"No se pudo exportar inventario a {self._target}: otro guardado esta en progreso."
+                )
+            time.sleep(_EXPORT_LOCK_SLEEP_SECONDS)
+        return self
+
+    def _try_acquire_lockfile(self) -> bool:
+        try:
+            fd = os.open(str(self._lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                mtime = self._lock_path.stat().st_mtime
+            except OSError:
+                return False
+            if time.time() - mtime > _EXPORT_LOCK_STALE_SECONDS:
+                try:
+                    self._lock_path.unlink()
+                except OSError:
+                    return False
+            return False
+        except OSError:
+            return False
+        else:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(f"{os.getpid()} {datetime.utcnow().isoformat()}")
+            return True
+
+    def _release_thread_lock(self) -> None:
+        if self._thread_acquired:
+            self._thread_lock.release()
+            self._thread_acquired = False
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._file_acquired:
+            try:
+                self._lock_path.unlink()
+            except OSError:
+                logger.exception("No se pudo liberar el bloqueo de exportacion")
+            self._file_acquired = False
+        self._release_thread_lock()
+
+
+def _validate_inventory_file(path: str, label: str) -> None:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise InventoryManagerError(
+            f"No se pudo exportar inventario a {label}: JSON malformado en linea {exc.lineno}, columna {exc.colno}"
+        ) from exc
+
+    data, _ = migrate_inventory_json(data)
+    issues = validate_inventory_json(data)
+    errors = [i for i in issues if i["severity"] == "error"]
+    if errors:
+        sample = "; ".join(f"{i['path']}: {i['message']}" for i in errors[:20])
+        raise InventoryManagerError(
+            f"Se encontraron {len(errors)} errores al exportar {label}: {sample}"
+        )
+
+
 class _AutoBackupScheduler:
     def __init__(self, backup_dir: str, *, debounce_seconds: float = 5.0, max_backups: int = 20):
         self.backup_dir = Path(backup_dir)
@@ -104,7 +209,7 @@ class _AutoBackupScheduler:
         manager: InventoryManager | None = None
         try:
             manager = InventoryManager(DB(), enable_auto_backup=False)
-            manager.exportar_inventario_json(str(filename))
+            manager.exportar_inventario_json(str(filename), lock_timeout=0)
             self._prune_old_backups()
         except Exception:
             logger.exception("No se pudo crear la copia de seguridad automática")
@@ -163,6 +268,17 @@ class InventoryManager:
                 register_callback(self._schedule_auto_backup)
             else:
                 self._auto_backup_enabled = False
+        try:
+            resumen = self.db.reparar_inventario_lotes()
+            if resumen.get("productos"):
+                logger.info(
+                    "Inventario reparado al iniciar: productos=%s negativos=%s stocks=%s",
+                    resumen.get("productos"),
+                    resumen.get("negativos"),
+                    resumen.get("stocks"),
+                )
+        except Exception:
+            logger.exception("No se pudo reparar el inventario al iniciar")
         self.refresh_data()
 
     def refresh_data(self):
@@ -303,18 +419,34 @@ class InventoryManager:
         presentaciones=None,
     ):
         sku = _normalize_sku_value(sku)
-        self.db.add_producto(
-            nombre,
-            codigo,
-            sku,
-            vendedor_id,
-            Distribuidor_id,
-            precio_compra,
-            precio_venta_minorista,
-            precio_venta_mayorista,
-            stock,
-            presentaciones=presentaciones,
-        )
+        try:
+            self.db.add_producto(
+                nombre,
+                codigo,
+                sku,
+                vendedor_id,
+                Distribuidor_id,
+                precio_compra,
+                precio_venta_minorista,
+                precio_venta_mayorista,
+                stock,
+                presentaciones=presentaciones,
+            )
+        except sqlite3.IntegrityError as exc:
+            logger.exception("Error de integridad al agregar producto %s", nombre)
+            message = str(exc).lower()
+            if "unique" in message and "sku" in message:
+                raise InventoryManagerError(
+                    "El SKU que intenta ingresar ya existe en el sistema."
+                ) from exc
+            raise InventoryManagerError(
+                "No se pudo agregar el producto; el registro ya existe o los datos son inválidos."
+            ) from exc
+        except sqlite3.DatabaseError as exc:
+            logger.exception("Error de base de datos al agregar producto %s", nombre)
+            raise InventoryManagerError(
+                "Ocurrió un error de base de datos al agregar el producto."
+            ) from exc
         self.refresh_data()
 
     def edit_producto(
@@ -332,19 +464,35 @@ class InventoryManager:
         presentaciones=None,
     ):
         sku = _normalize_sku_value(sku)
-        self.db.edit_producto(
-            producto_id,
-            nombre,
-            codigo,
-            sku,
-            vendedor_id,
-            Distribuidor_id,
-            precio_compra,
-            precio_venta_minorista,
-            precio_venta_mayorista,
-            stock,
-            presentaciones=presentaciones,
-        )
+        try:
+            self.db.edit_producto(
+                producto_id,
+                nombre,
+                codigo,
+                sku,
+                vendedor_id,
+                Distribuidor_id,
+                precio_compra,
+                precio_venta_minorista,
+                precio_venta_mayorista,
+                stock,
+                presentaciones=presentaciones,
+            )
+        except sqlite3.IntegrityError as exc:
+            logger.exception("Error de integridad al editar producto %s", producto_id)
+            message = str(exc).lower()
+            if "unique" in message and "sku" in message:
+                raise InventoryManagerError(
+                    "El SKU que intenta ingresar ya existe en el sistema."
+                ) from exc
+            raise InventoryManagerError(
+                "No se pudo editar el producto; el registro ya existe o los datos son inválidos."
+            ) from exc
+        except sqlite3.DatabaseError as exc:
+            logger.exception("Error de base de datos al editar producto %s", producto_id)
+            raise InventoryManagerError(
+                "Ocurrió un error de base de datos al editar el producto."
+            ) from exc
         self.refresh_data()
 
     def delete_producto(self, producto_id):
@@ -459,7 +607,14 @@ class InventoryManager:
 
         self.update_detalle_compra(detalle_id, cantidad=nueva_cantidad)
 
-    def exportar_inventario_json(self, filename, tab_order=None):
+    def exportar_inventario_json(
+        self,
+        filename,
+        tab_order=None,
+        *,
+        lock_timeout: float | None = 5.0,
+        validate: bool = True,
+    ):
         datos_negocio = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
             try:
@@ -501,182 +656,206 @@ class InventoryManager:
             f.write("]")
             first_section = False
 
+        tmp_path = None
         try:
-            with open(filename, "w", encoding="utf-8") as f:
-                first_section = True
-                f.write("{")
-                write_kv("schemaVersion", 1)
-                write_kv("generatedAt", datetime.utcnow().isoformat())
-                write_kv("appVersion", APP_VERSION)
-                productos_export = []
-                for producto in self._products:
-                    prod = dict(producto)
-                    prod["sku"] = _normalize_sku_value(prod.get("sku"))
-                    productos_export.append(prod)
-                write_array("productos", productos_export)
-                self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
-                try:
-                    self.db.cursor.execute(
-                        "UPDATE ventas SET sincronizada=1 WHERE sincronizada IS NULL"
-                    )
-                except Exception:
-                    logger.exception(
-                        "No se pudo actualizar ventas.sincronizada para valores nulos"
-                    )
-                else:
+            with _ExportLock(filename, lock_timeout):
+                tmp_dir = str(Path(filename).resolve().parent)
+                tmp_prefix = f".{Path(filename).name}."
+                tmp_fd, tmp_path = tempfile.mkstemp(
+                    prefix=tmp_prefix,
+                    suffix=".tmp",
+                    dir=tmp_dir,
+                )
+                with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                    first_section = True
+                    f.write("{")
+                    write_kv("schemaVersion", 1)
+                    write_kv("generatedAt", datetime.utcnow().isoformat())
+                    write_kv("appVersion", APP_VERSION)
+                    productos_export = []
+                    for producto in self._products:
+                        prod = dict(producto)
+                        prod["sku"] = _normalize_sku_value(prod.get("sku"))
+                        productos_export.append(prod)
+                    write_array("productos", productos_export)
+                    self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
                     try:
-                        self.db.conn.commit()
+                        self.db.cursor.execute(
+                            "UPDATE ventas SET sincronizada=1 WHERE sincronizada IS NULL"
+                        )
                     except Exception:
-                        logger.exception("No se pudo confirmar la normalización de ventas.sincronizada")
-                worker_vendedores = list(self.db.get_trabajadores(solo_vendedores=True))
-                ventas_rows = [
-                    dict(v)
-                    for v in self.db.cursor.execute(
-                        "SELECT * FROM ventas WHERE sincronizada=1"
-                    )
-                ]
-                vendedores_export = []
-                existing_vendor_ids: set[int] = set()
-
-                def _coerce_vendor_id(raw_id):
-                    try:
-                        return int(raw_id)
-                    except (TypeError, ValueError):
-                        return None
-
-                for vend in self._vendedores:
-                    vend_dict = dict(vend)
-                    vid = _coerce_vendor_id(vend_dict.get("id"))
-                    if vid is not None:
-                        existing_vendor_ids.add(vid)
-                    vendedores_export.append(vend_dict)
-                for trabajador in worker_vendedores:
-                    tid = trabajador.get("id")
-                    if tid is None or _coerce_vendor_id(tid) in existing_vendor_ids:
-                        continue
-                    logger.warning(
-                        "Se detectó trabajador marcado como vendedor sin registro en vendedores (id=%s). Se exportará automáticamente.",
-                        tid,
-                    )
-                    vendedores_export.append(
-                        {
-                            "id": tid,
-                            "codigo": trabajador.get("codigo"),
-                            "nombre": trabajador.get("nombre"),
-                            "dui": trabajador.get("dui", ""),
-                            "descripcion": trabajador.get("comentarios", "") or "",
-                            "Distribuidor_id": None,
-                        }
-                    )
-                    coerced_tid = _coerce_vendor_id(tid)
-                    if coerced_tid is not None:
-                        existing_vendor_ids.add(coerced_tid)
-                for venta in ventas_rows:
-                    vendedor_id = venta.get("vendedor_id")
-                    if vendedor_id is None:
-                        continue
-                    try:
-                        vendedor_id_int = int(vendedor_id)
-                    except (TypeError, ValueError):
-                        message = (
-                            f"La venta {venta.get('id')} tiene vendedor_id inválido ({vendedor_id!r})."
+                        logger.exception(
+                            "No se pudo actualizar ventas.sincronizada para valores nulos"
                         )
-                        logger.error(message)
-                        raise InventoryManagerError(message)
-                    if vendedor_id_int not in existing_vendor_ids:
-                        message = (
-                            f"La venta {venta.get('id')} referencia un vendedor inexistente ({vendedor_id_int}). "
-                            f"Corrige la venta o crea el vendedor antes de exportar."
+                    else:
+                        try:
+                            self.db.conn.commit()
+                        except Exception:
+                            logger.exception("No se pudo confirmar la normalización de ventas.sincronizada")
+                    worker_vendedores = list(self.db.get_trabajadores(solo_vendedores=True))
+                    ventas_rows = [
+                        dict(v)
+                        for v in self.db.cursor.execute(
+                            "SELECT * FROM ventas WHERE sincronizada=1"
                         )
-                        logger.error(message)
-                        raise InventoryManagerError(message)
-                write_array("vendedores", vendedores_export)
-                write_array("distribuidores", (dict(v) for v in self._Distribuidores))
-                write_array("clientes", (dict(c) for c in self._clientes))
-                write_array("ventas", ventas_rows)
-                write_array(
-                    "compras",
-                    (dict(c) for c in self.db.cursor.execute("SELECT * FROM compras")),
-                )
-                write_array(
-                    "movimientos",
-                    (dict(m) for m in self.db.cursor.execute("SELECT * FROM movimientos")),
-                )
-                write_array(
-                    "detalles_venta",
-                    (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_venta")),
-                )
-                write_array(
-                    "detalles_compra",
-                    (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_compra")),
-                )
-                write_array(
-                    "dte_envios",
-                    (dict(d) for d in self.db.cursor.execute("SELECT * FROM dte_envios")),
-                )
-                write_array(
-                    "notas",
-                    (dict(n) for n in self.db.cursor.execute("SELECT * FROM notas")),
-                )
-                write_array(
-                    "facturas_pdf",
-                    (dict(f) for f in self.db.cursor.execute("SELECT * FROM facturas_pdf")),
-                )
-                write_array(
-                    "tickets_pdf",
-                    (dict(t) for t in self.db.cursor.execute("SELECT * FROM tickets_pdf")),
-                )
-                # Retenciones CR (opcional)
-                try:
-                    self.db._ensure_retenciones_cr_table()
-                    write_array(
-                        "retenciones_cr",
-                        (dict(r) for r in self.db.cursor.execute("SELECT * FROM retenciones_cr")),
-                    )
-                except Exception:
-                    logger.exception("No se pudo exportar retenciones_cr")
-                sanitized_negocio = _sanitize_datos_negocio(datos_negocio)
-                if sanitized_negocio:
-                    f.write(",\n\"datos_negocio\":")
-                    try:
-                        json.dump(sanitized_negocio, f, ensure_ascii=False)
-                    except TypeError:
-                        f.write(
-                            json.dumps(
-                                sanitized_negocio,
-                                ensure_ascii=False,
-                                cls=DecimalEncoder,
+                    ]
+                    vendedores_export = []
+                    existing_vendor_ids: set[int] = set()
+
+                    def _coerce_vendor_id(raw_id):
+                        try:
+                            return int(raw_id)
+                        except (TypeError, ValueError):
+                            return None
+
+                    for vend in self._vendedores:
+                        vend_dict = dict(vend)
+                        vid = _coerce_vendor_id(vend_dict.get("id"))
+                        if vid is not None:
+                            existing_vendor_ids.add(vid)
+                        vendedores_export.append(vend_dict)
+                    for trabajador in worker_vendedores:
+                        tid = trabajador.get("id")
+                        if tid is None or _coerce_vendor_id(tid) in existing_vendor_ids:
+                            continue
+                        logger.warning(
+                            "Se detectó trabajador marcado como vendedor sin registro en vendedores (id=%s). Se exportará automáticamente.",
+                            tid,
+                        )
+                        vendedores_export.append(
+                            {
+                                "id": tid,
+                                "codigo": trabajador.get("codigo"),
+                                "nombre": trabajador.get("nombre"),
+                                "dui": trabajador.get("dui", ""),
+                                "descripcion": trabajador.get("comentarios", "") or "",
+                                "Distribuidor_id": None,
+                            }
+                        )
+                        coerced_tid = _coerce_vendor_id(tid)
+                        if coerced_tid is not None:
+                            existing_vendor_ids.add(coerced_tid)
+                    for venta in ventas_rows:
+                        vendedor_id = venta.get("vendedor_id")
+                        if vendedor_id is None:
+                            continue
+                        try:
+                            vendedor_id_int = int(vendedor_id)
+                        except (TypeError, ValueError):
+                            message = (
+                                f"La venta {venta.get('id')} tiene vendedor_id inválido ({vendedor_id!r})."
                             )
-                        )
-                    except Exception:
-                        raise
-                else:
-                    f.write(",\n\"datos_negocio\":{}")
-                write_array(
-                    "trabajadores",
-                    (dict(t) for t in self.db.cursor.execute("SELECT * FROM trabajadores")),
-                )
-                write_array(
-                    "ventas_credito_fiscal",
-                    (dict(v) for v in self.db.cursor.execute("SELECT * FROM ventas_credito_fiscal")),
-                )
-                if tab_order is not None:
-                    f.write(",\n\"tab_order\":")
+                            logger.error(message)
+                            raise InventoryManagerError(message)
+                        if vendedor_id_int not in existing_vendor_ids:
+                            message = (
+                                f"La venta {venta.get('id')} referencia un vendedor inexistente ({vendedor_id_int}). "
+                                f"Corrige la venta o crea el vendedor antes de exportar."
+                            )
+                            logger.error(message)
+                            raise InventoryManagerError(message)
+                    write_array("vendedores", vendedores_export)
+                    write_array("distribuidores", (dict(v) for v in self._Distribuidores))
+                    write_array("clientes", (dict(c) for c in self._clientes))
+                    write_array("ventas", ventas_rows)
+                    write_array(
+                        "compras",
+                        (dict(c) for c in self.db.cursor.execute("SELECT * FROM compras")),
+                    )
+                    write_array(
+                        "movimientos",
+                        (dict(m) for m in self.db.cursor.execute("SELECT * FROM movimientos")),
+                    )
+                    write_array(
+                        "detalles_venta",
+                        (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_venta")),
+                    )
+                    write_array(
+                        "detalles_compra",
+                        (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_compra")),
+                    )
+                    write_array(
+                        "dte_envios",
+                        (dict(d) for d in self.db.cursor.execute("SELECT * FROM dte_envios")),
+                    )
+                    write_array(
+                        "notas",
+                        (dict(n) for n in self.db.cursor.execute("SELECT * FROM notas")),
+                    )
+                    write_array(
+                        "facturas_pdf",
+                        (dict(f) for f in self.db.cursor.execute("SELECT * FROM facturas_pdf")),
+                    )
+                    write_array(
+                        "tickets_pdf",
+                        (dict(t) for t in self.db.cursor.execute("SELECT * FROM tickets_pdf")),
+                    )
+                    # Retenciones CR (opcional)
                     try:
-                        json.dump(tab_order, f, ensure_ascii=False)
-                    except TypeError:
-                        f.write(
-                            json.dumps(tab_order, ensure_ascii=False, cls=DecimalEncoder)
+                        self.db._ensure_retenciones_cr_table()
+                        write_array(
+                            "retenciones_cr",
+                            (dict(r) for r in self.db.cursor.execute("SELECT * FROM retenciones_cr")),
                         )
                     except Exception:
-                        raise
-                f.write("}")
+                        logger.exception("No se pudo exportar retenciones_cr")
+                    sanitized_negocio = _sanitize_datos_negocio(datos_negocio)
+                    if sanitized_negocio:
+                        f.write(",\n\"datos_negocio\":")
+                        try:
+                            json.dump(sanitized_negocio, f, ensure_ascii=False)
+                        except TypeError:
+                            f.write(
+                                json.dumps(
+                                    sanitized_negocio,
+                                    ensure_ascii=False,
+                                    cls=DecimalEncoder,
+                                )
+                            )
+                        except Exception:
+                            raise
+                    else:
+                        f.write(",\n\"datos_negocio\":{}")
+                    write_array(
+                        "trabajadores",
+                        (dict(t) for t in self.db.cursor.execute("SELECT * FROM trabajadores")),
+                    )
+                    write_array(
+                        "ventas_credito_fiscal",
+                        (dict(v) for v in self.db.cursor.execute("SELECT * FROM ventas_credito_fiscal")),
+                    )
+                    if tab_order is not None:
+                        f.write(",\n\"tab_order\":")
+                        try:
+                            json.dump(tab_order, f, ensure_ascii=False)
+                        except TypeError:
+                            f.write(
+                                json.dumps(tab_order, ensure_ascii=False, cls=DecimalEncoder)
+                            )
+                        except Exception:
+                            raise
+                    f.write("}")
+                    f.flush()
+                    os.fsync(f.fileno())
+                if validate:
+                    _validate_inventory_file(tmp_path, filename)
+                os.replace(tmp_path, filename)
+                tmp_path = None
+        except InventoryManagerError:
+            logger.exception("Error al exportar inventario a %s", filename)
+            if tmp_path:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            raise
         except Exception as e:
             logger.exception("Error al exportar inventario a %s", filename)
-            try:
-                os.remove(filename)
-            except OSError:
-                pass
+            if tmp_path:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
             raise InventoryManagerError(
                 f"No se pudo exportar inventario a {filename}: {e}"
             ) from e
@@ -724,6 +903,18 @@ class InventoryManager:
             logger.removeHandler(handler)
             handler.close()
 
+        try:
+            resumen = self.db.reparar_inventario_lotes()
+            if resumen.get("productos"):
+                logger.info(
+                    "Inventario reparado tras importación: productos=%s negativos=%s stocks=%s",
+                    resumen.get("productos"),
+                    resumen.get("negativos"),
+                    resumen.get("stocks"),
+                )
+        except Exception:
+            logger.exception("No se pudo reparar el inventario tras la importación")
+        self.refresh_data()
         return data
 
     def _importar_inventario_json_legacy(self, data):

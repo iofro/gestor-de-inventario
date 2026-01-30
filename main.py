@@ -32,9 +32,12 @@ from ui_mainwindow import MainWindow
 from login_dialog import LoginDialog
 from db import DB
 from utils import resource_path
-from paths import LAST_INVENTORY_PATH, migrate_datos_negocio, user_data_path
+from utils.activation import check_activation
+from inventory_manager import InventoryManagerError
+from paths import AUTO_BACKUP_DIR, LAST_INVENTORY_PATH, migrate_datos_negocio, user_data_path
 from dte import APP_VERSION
 from utils.firmador import firmador_activo, iniciar_firmador
+from utils.log_buffer import install_log_buffer
 
 LAST_FILE_PATH = Path(LAST_INVENTORY_PATH)
 LAST_USER_PATH = Path(user_data_path("last_user.txt"))
@@ -80,6 +83,60 @@ def cargar_ultimo_archivo():
     if DEFAULT_INVENTORY.exists():
         return str(DEFAULT_INVENTORY)
     return ""
+
+
+def _get_latest_backup_path() -> str:
+    backup_dir = Path(AUTO_BACKUP_DIR)
+    try:
+        entries = list(backup_dir.glob("*.json")) if backup_dir.is_dir() else []
+    except OSError:
+        return ""
+    latest_entry = None
+    latest_mtime = None
+    for entry in entries:
+        try:
+            if not entry.is_file():
+                continue
+            mtime = entry.stat().st_mtime
+        except OSError:
+            continue
+        if latest_mtime is None or mtime > latest_mtime:
+            latest_entry = entry
+            latest_mtime = mtime
+    return str(latest_entry) if latest_entry else ""
+
+
+def _get_startup_inventory_candidates(primary: str) -> list[str]:
+    candidates: list[str] = []
+
+    def _add(path: str) -> None:
+        if not path:
+            return
+        if path in candidates:
+            return
+        try:
+            if Path(path).exists():
+                candidates.append(path)
+        except OSError:
+            return
+
+    _add(primary)
+    _add(str(user_data_path("inventario_autosave.json")))
+    _add(_get_latest_backup_path())
+    try:
+        if DEFAULT_INVENTORY.exists():
+            _add(str(DEFAULT_INVENTORY))
+    except OSError:
+        pass
+    return candidates
+
+
+def _persist_last_inventory(path: str) -> None:
+    try:
+        with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as fh:
+            json.dump({"ultimo": path}, fh)
+    except OSError as exc:
+        logger.exception("No se pudo actualizar la ruta del ultimo inventario: %s", exc)
 
 
 def iniciar_servicios(parent=None):
@@ -188,6 +245,7 @@ def _ensure_admin_recovery(db: DB, parent: QDialog | None = None):
             pass
 
 if __name__ == "__main__":
+    install_log_buffer()
     migrate_datos_negocio()
     if getattr(sys, "frozen", False):
         checks = {
@@ -219,6 +277,16 @@ if __name__ == "__main__":
     icon_path = resource_path("logoinventario.jpg")
     if icon_path.is_file():
         app.setWindowIcon(QIcon(str(icon_path)))
+
+    activation = check_activation()
+    if not activation.active:
+        message = (
+            "Esta instalacion esta desactivada.\n"
+            f"ID de equipo: {activation.device_id}\n"
+            "Conectese a internet para actualizar el estado o contacte al administrador."
+        )
+        QMessageBox.critical(None, "Activacion requerida", message)
+        sys.exit(0)
 
     db = DB()
     _ensure_admin_recovery(db)
@@ -279,14 +347,29 @@ if __name__ == "__main__":
         window.setWindowIcon(QIcon(str(icon_path)))
     window.showMaximized()
 
-    # Cargar automáticamente el último inventario usadow
+    # Cargar automáticamente el último inventario usado
     ultimo_archivo = cargar_ultimo_archivo()
-    if ultimo_archivo and os.path.exists(ultimo_archivo):
-        try:
-            data = window.manager.importar_inventario_json(ultimo_archivo)
+    if ultimo_archivo:
+        candidates = _get_startup_inventory_candidates(ultimo_archivo)
+        data = None
+        used_path = ""
+        last_error = None
+        for path in candidates:
+            try:
+                data = window.manager.importar_inventario_json(path)
+            except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error, InventoryManagerError) as exc:
+                last_error = exc
+                logger.warning("No se pudo cargar inventario %s: %s", path, exc)
+                continue
+            used_path = path
+            break
+
+        if used_path:
             if isinstance(data, dict) and data.get("tab_order"):
                 window.set_tab_order(data["tab_order"])
-            window.ultimo_archivo_json = ultimo_archivo
+            window.ultimo_archivo_json = used_path
+            if used_path != ultimo_archivo:
+                _persist_last_inventory(used_path)
             window.compras_tab.refresh_filters()
             window.filter_products()
             window._actualizar_arbol_vendedores()
@@ -297,7 +380,7 @@ if __name__ == "__main__":
             window._cargar_personas_estado()
             window.sales_tab.load_sales()
             QMessageBox.information(window, "Inventario", "Inventario cargado exitosamente.")
-        except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as e:
-            QMessageBox.critical(window, "Error", f"No se pudo cargar el inventario:\n{e}")
+        elif last_error:
+            QMessageBox.critical(window, "Error", f"No se pudo cargar el inventario:\n{last_error}")
 
     sys.exit(app.exec_())

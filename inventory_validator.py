@@ -90,14 +90,12 @@ def validate_inventory_json(data: dict) -> List[Issue]:
         stock = p.get("stock")
         if stock is not None:
             try:
-                stock_val = float(stock)
-                if stock_val < 0:
-                    raise ValueError
+                float(stock)
             except (TypeError, ValueError):
                 issues.append({
                     "path": f"productos[{i}].stock",
                     "severity": "error",
-                    "message": "stock debe ser un número no negativo",
+                    "message": "stock debe ser un número",
                 })
 
     vendedor_ids = {v.get("id") for v in vendedores if isinstance(v, dict)}

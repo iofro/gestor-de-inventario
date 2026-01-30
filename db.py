@@ -854,6 +854,7 @@ class DB:
         self.ensure_column("detalles_compra", "presentacion_factor", "REAL")
         self.ensure_column("detalles_compra", "presentacion_nombre", "TEXT")
         self.ensure_column("detalles_compra", "precio_presentacion", "REAL")
+        self.ensure_column("detalles_compra", "es_lote_negativo", "INTEGER DEFAULT 0")
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS detalles_compra (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2126,6 +2127,23 @@ class DB:
         self.cursor.execute("SELECT * FROM detalles_compra WHERE compra_id=?", (compra_id,))
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_detalles_compra_todos(self):
+        """Devuelve todos los lotes con información de compra si está disponible."""
+        self.cursor.execute(
+            """
+            SELECT d.*,
+                   c.fecha AS compra_fecha,
+                   c.Distribuidor_id AS compra_Distribuidor_id
+            FROM detalles_compra d
+            LEFT JOIN compras c ON c.id = d.compra_id
+            ORDER BY
+                CASE WHEN c.fecha IS NULL OR TRIM(c.fecha) = '' THEN 1 ELSE 0 END,
+                c.fecha ASC,
+                d.id ASC
+            """
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
+
 
     def get_estado_cuenta(self, persona_id, tipo="cliente", fecha_inicio=None, fecha_fin=None):
         """Obtiene las facturas de un cliente o vendedor en un rango de fechas.
@@ -2137,19 +2155,55 @@ class DB:
         if tipo not in ("cliente", "vendedor"):
             raise ValueError("tipo debe ser 'cliente' o 'vendedor'")
 
-        field = "cliente_id" if tipo == "cliente" else "vendedor_id"
-        query = (
-            f"SELECT id, fecha, total, cliente_id, vendedor_id "
-            f"FROM ventas WHERE {field}=?"
-        )
-        params = [persona_id]
+        if tipo == "vendedor":
+            query = (
+                "SELECT v.id, v.fecha, v.total, v.cliente_id, "
+                "COALESCE("
+                "v.vendedor_id, "
+                "(SELECT dv2.vendedor_id FROM detalles_venta dv2 "
+                "WHERE dv2.venta_id=v.id AND dv2.vendedor_id IS NOT NULL "
+                "LIMIT 1), "
+                "(SELECT p.vendedor_id FROM detalles_venta dv3 "
+                "JOIN productos p ON p.id = dv3.producto_id "
+                "WHERE dv3.venta_id=v.id AND p.vendedor_id IS NOT NULL "
+                "LIMIT 1)"
+                ") AS vendedor_id "
+                "FROM ventas v "
+                "WHERE v.vendedor_id=? "
+                "OR EXISTS ("
+                "SELECT 1 FROM detalles_venta dv "
+                "WHERE dv.venta_id=v.id AND dv.vendedor_id=?"
+                ") "
+                "OR EXISTS ("
+                "SELECT 1 FROM detalles_venta dv "
+                "JOIN productos p ON p.id = dv.producto_id "
+                "WHERE dv.venta_id=v.id AND p.vendedor_id=?"
+                ")"
+            )
+            params = [persona_id, persona_id, persona_id]
+        else:
+            query = (
+                "SELECT v.id, v.fecha, v.total, v.cliente_id, "
+                "COALESCE("
+                "v.vendedor_id, "
+                "(SELECT dv2.vendedor_id FROM detalles_venta dv2 "
+                "WHERE dv2.venta_id=v.id AND dv2.vendedor_id IS NOT NULL "
+                "LIMIT 1), "
+                "(SELECT p.vendedor_id FROM detalles_venta dv3 "
+                "JOIN productos p ON p.id = dv3.producto_id "
+                "WHERE dv3.venta_id=v.id AND p.vendedor_id IS NOT NULL "
+                "LIMIT 1)"
+                ") AS vendedor_id "
+                "FROM ventas v WHERE v.cliente_id=?"
+            )
+            params = [persona_id]
         if fecha_inicio:
-            query += " AND date(fecha) >= date(?)"
+            query += " AND date(v.fecha) >= date(?)"
             params.append(fecha_inicio)
         if fecha_fin:
-            query += " AND date(fecha) <= date(?)"
+            query += " AND date(v.fecha) <= date(?)"
             params.append(fecha_fin)
-        query += " ORDER BY fecha"
+        query += " ORDER BY v.fecha"
         self.cursor.execute(query, params)
         facturas = [dict(row) for row in self.cursor.fetchall()]
         for f in facturas:
@@ -2247,9 +2301,7 @@ class DB:
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def delete_venta(self, id):
-        """Elimina una venta y restaura el inventario asociado."""
-
+    def _restore_inventario_for_venta(self, id):
         def _to_python(value):
             if value in (None, ""):
                 return None
@@ -2298,117 +2350,137 @@ class DB:
             except Exception:
                 return None
 
+        logger.info("Restaurando inventario para venta %s", id)
+        self.cursor.execute(
+            "SELECT producto_id, cantidad, extra FROM detalles_venta WHERE venta_id=?",
+            (id,),
+        )
+        detalles = [dict(row) for row in self.cursor.fetchall()]
+
+        lotes_a_restaurar: dict[int, dict[str, Decimal | int | None]] = {}
+        productos_directos: dict[int, Decimal] = {}
+        productos_recalc = set()
+        productos_direct = set()
+
+        for detalle in detalles:
+            producto_id = detalle.get("producto_id")
+            if not producto_id:
+                continue
+            cantidad_dec = _to_decimal(detalle.get("cantidad"))
+            if cantidad_dec is None or cantidad_dec <= 0:
+                continue
+
+            parsed_extra = _to_python(detalle.get("extra"))
+            lote_entries = _gather_lote_entries(parsed_extra) if parsed_extra else []
+
+            valid_lotes = []
+            for entry in lote_entries:
+                lote_id_raw = entry.get("lote_id") if isinstance(entry, dict) else None
+                try:
+                    lote_id = int(lote_id_raw)
+                except (TypeError, ValueError):
+                    continue
+                cantidad_entry = _to_decimal(entry.get("cantidad")) if isinstance(entry, dict) else None
+                producto_entry = entry.get("producto_id") if isinstance(entry, dict) else None
+                valid_lotes.append(
+                    {
+                        "lote_id": lote_id,
+                        "cantidad": cantidad_entry,
+                        "producto_id": producto_entry or producto_id,
+                    }
+                )
+
+            if valid_lotes and any(item["cantidad"] is None for item in valid_lotes):
+                # Si hay un único lote podemos asumir que toda la cantidad proviene de él.
+                if len(valid_lotes) == 1:
+                    valid_lotes[0]["cantidad"] = cantidad_dec
+                else:
+                    valid_lotes = [item for item in valid_lotes if item["cantidad"] is not None]
+
+            if valid_lotes:
+                for lote in valid_lotes:
+                    cantidad_lote = lote.get("cantidad")
+                    if cantidad_lote is None:
+                        cantidad_lote = cantidad_dec
+                    if cantidad_lote is None or cantidad_lote <= 0:
+                        continue
+                    info = lotes_a_restaurar.setdefault(
+                        lote["lote_id"],
+                        {"cantidad": Decimal("0"), "producto_id": lote.get("producto_id")},
+                    )
+                    info["cantidad"] = info["cantidad"] + cantidad_lote
+                    if not info.get("producto_id"):
+                        info["producto_id"] = lote.get("producto_id")
+            else:
+                productos_directos[producto_id] = productos_directos.get(producto_id, Decimal("0")) + cantidad_dec
+
+        for lote_id, data in lotes_a_restaurar.items():
+            cantidad = data.get("cantidad")
+            if cantidad is None or cantidad <= 0:
+                continue
+            producto_id = data.get("producto_id")
+            logger.info(
+                "Restaurando lote %s (+%s) para producto %s", lote_id, cantidad, producto_id
+            )
+            self.cursor.execute(
+                "UPDATE detalles_compra SET cantidad = COALESCE(cantidad, 0) + ? WHERE id=?",
+                (float(cantidad), lote_id),
+            )
+            if self.cursor.rowcount:
+                if producto_id:
+                    productos_recalc.add(producto_id)
+            else:
+                if producto_id:
+                    productos_directos[producto_id] = productos_directos.get(producto_id, Decimal("0")) + cantidad
+
+        for producto_id, cantidad in productos_directos.items():
+            if not producto_id or cantidad is None or cantidad <= 0:
+                continue
+            logger.info("Restaurando stock directo producto %s +%s", producto_id, cantidad)
+            self.cursor.execute(
+                "UPDATE productos SET stock = COALESCE(stock, 0) + ? WHERE id=?",
+                (float(cantidad), producto_id),
+            )
+            productos_direct.add(producto_id)
+
+        productos_recalc.difference_update(productos_direct)
+        for producto_id in productos_recalc:
+            if not producto_id:
+                continue
+            self.cursor.execute(
+                "SELECT SUM(cantidad) FROM detalles_compra WHERE producto_id=?",
+                (producto_id,),
+            )
+            total = self.cursor.fetchone()[0]
+            if total is None:
+                continue
+            self.cursor.execute(
+                "UPDATE productos SET stock=? WHERE id=?",
+                (float(total), producto_id),
+            )
+
+    def restore_inventario_venta(self, id) -> bool:
+        if not id:
+            return False
         try:
             with self.lock:
-                logger.info("Restaurando inventario para venta %s", id)
-                self.cursor.execute(
-                    "SELECT producto_id, cantidad, extra FROM detalles_venta WHERE venta_id=?",
-                    (id,),
-                )
-                detalles = [dict(row) for row in self.cursor.fetchall()]
+                self._restore_inventario_for_venta(id)
+                self.conn.commit()
+            return True
+        except Exception as e:
+            logger.exception("Error al restaurar inventario: %s", e)
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            return False
 
-                lotes_a_restaurar: dict[int, dict[str, Decimal | int | None]] = {}
-                productos_directos: dict[int, Decimal] = {}
-                productos_recalc = set()
-                productos_direct = set()
+    def delete_venta(self, id):
+        """Elimina una venta y restaura el inventario asociado."""
 
-                for detalle in detalles:
-                    producto_id = detalle.get("producto_id")
-                    if not producto_id:
-                        continue
-                    cantidad_dec = _to_decimal(detalle.get("cantidad"))
-                    if cantidad_dec is None or cantidad_dec <= 0:
-                        continue
-
-                    parsed_extra = _to_python(detalle.get("extra"))
-                    lote_entries = _gather_lote_entries(parsed_extra) if parsed_extra else []
-
-                    valid_lotes = []
-                    for entry in lote_entries:
-                        lote_id_raw = entry.get("lote_id") if isinstance(entry, dict) else None
-                        try:
-                            lote_id = int(lote_id_raw)
-                        except (TypeError, ValueError):
-                            continue
-                        cantidad_entry = _to_decimal(entry.get("cantidad")) if isinstance(entry, dict) else None
-                        producto_entry = entry.get("producto_id") if isinstance(entry, dict) else None
-                        valid_lotes.append(
-                            {
-                                "lote_id": lote_id,
-                                "cantidad": cantidad_entry,
-                                "producto_id": producto_entry or producto_id,
-                            }
-                        )
-
-                    if valid_lotes and any(item["cantidad"] is None for item in valid_lotes):
-                        # Si hay un único lote podemos asumir que toda la cantidad proviene de él.
-                        if len(valid_lotes) == 1:
-                            valid_lotes[0]["cantidad"] = cantidad_dec
-                        else:
-                            valid_lotes = [item for item in valid_lotes if item["cantidad"] is not None]
-
-                    if valid_lotes:
-                        for lote in valid_lotes:
-                            cantidad_lote = lote.get("cantidad")
-                            if cantidad_lote is None:
-                                cantidad_lote = cantidad_dec
-                            if cantidad_lote is None or cantidad_lote <= 0:
-                                continue
-                            info = lotes_a_restaurar.setdefault(
-                                lote["lote_id"],
-                                {"cantidad": Decimal("0"), "producto_id": lote.get("producto_id")},
-                            )
-                            info["cantidad"] = info["cantidad"] + cantidad_lote
-                            if not info.get("producto_id"):
-                                info["producto_id"] = lote.get("producto_id")
-                    else:
-                        productos_directos[producto_id] = productos_directos.get(producto_id, Decimal("0")) + cantidad_dec
-
-                for lote_id, data in lotes_a_restaurar.items():
-                    cantidad = data.get("cantidad")
-                    if cantidad is None or cantidad <= 0:
-                        continue
-                    producto_id = data.get("producto_id")
-                    logger.info(
-                        "Restaurando lote %s (+%s) para producto %s", lote_id, cantidad, producto_id
-                    )
-                    self.cursor.execute(
-                        "UPDATE detalles_compra SET cantidad = COALESCE(cantidad, 0) + ? WHERE id=?",
-                        (float(cantidad), lote_id),
-                    )
-                    if self.cursor.rowcount:
-                        if producto_id:
-                            productos_recalc.add(producto_id)
-                    else:
-                        if producto_id:
-                            productos_directos[producto_id] = productos_directos.get(producto_id, Decimal("0")) + cantidad
-
-                for producto_id, cantidad in productos_directos.items():
-                    if not producto_id or cantidad is None or cantidad <= 0:
-                        continue
-                    logger.info("Restaurando stock directo producto %s +%s", producto_id, cantidad)
-                    self.cursor.execute(
-                        "UPDATE productos SET stock = COALESCE(stock, 0) + ? WHERE id=?",
-                        (float(cantidad), producto_id),
-                    )
-                    productos_direct.add(producto_id)
-
-                productos_recalc.difference_update(productos_direct)
-                for producto_id in productos_recalc:
-                    if not producto_id:
-                        continue
-                    self.cursor.execute(
-                        "SELECT SUM(cantidad) FROM detalles_compra WHERE producto_id=?",
-                        (producto_id,),
-                    )
-                    total = self.cursor.fetchone()[0]
-                    if total is None:
-                        continue
-                    self.cursor.execute(
-                        "UPDATE productos SET stock=? WHERE id=?",
-                        (float(total), producto_id),
-                    )
-
+        try:
+            with self.lock:
+                self._restore_inventario_for_venta(id)
                 self.cursor.execute(
                     "DELETE FROM detalles_venta WHERE venta_id=?",
                     (id,),
@@ -3510,6 +3582,27 @@ class DB:
 
             self.conn.commit()
 
+    def _aplicar_compra_a_lote_negativo(self, producto_id: int, cantidad: float) -> tuple[float, float]:
+        """Aplica una compra para reducir el lote negativo y devuelve (restante, aplicado)."""
+        if cantidad <= 0:
+            return cantidad, 0.0
+        negativo = self._ensure_lote_negativo(producto_id, create_if_missing=False)
+        if not negativo:
+            return cantidad, 0.0
+        neg_cantidad = float(negativo.get("cantidad") or 0)
+        if neg_cantidad >= 0:
+            return cantidad, 0.0
+        deficit = abs(neg_cantidad)
+        aplicado = min(deficit, cantidad)
+        nuevo_neg = neg_cantidad + aplicado
+        flag = 1 if nuevo_neg < 0 else 0
+        self.cursor.execute(
+            "UPDATE detalles_compra SET cantidad=?, es_lote_negativo=? WHERE id=?",
+            (nuevo_neg, flag, negativo["id"]),
+        )
+        restante = cantidad - aplicado
+        return restante, aplicado
+
     def add_detalle_compra(
         self,
         compra_id,
@@ -3536,16 +3629,24 @@ class DB:
         self.ensure_column("detalles_compra", "presentacion_factor", "REAL")
         self.ensure_column("detalles_compra", "presentacion_nombre", "TEXT")
         self.ensure_column("detalles_compra", "precio_presentacion", "REAL")
+        self.ensure_column("detalles_compra", "es_lote_negativo", "INTEGER DEFAULT 0")
+        try:
+            cantidad_val = float(cantidad)
+        except Exception:
+            cantidad_val = 0.0
+        if producto_id and cantidad_val > 0:
+            cantidad_val, _aplicado = self._aplicar_compra_a_lote_negativo(producto_id, cantidad_val)
+        cantidad = cantidad_val
         self.cursor.execute("""
             INSERT INTO detalles_compra (
                 compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento,
                 codigo_lote, registro_sanitario, descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo,
-                cantidad_presentacion, presentacion_factor, presentacion_nombre, precio_presentacion
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                cantidad_presentacion, presentacion_factor, presentacion_nombre, precio_presentacion, es_lote_negativo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento,
             codigo_lote, registro_sanitario, descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo,
-            cantidad_presentacion, presentacion_factor, presentacion_nombre, precio_presentacion
+            cantidad_presentacion, presentacion_factor, presentacion_nombre, precio_presentacion, 0
         ))
         if commit:
             self.conn.commit()
@@ -4021,6 +4122,327 @@ class DB:
             (total, producto_id)
         )
         self.conn.commit()
+
+    def get_lotes_negativos(self):
+        """Devuelve lotes negativos (virtuales o heredados) desde detalles_compra."""
+        self.ensure_column("detalles_compra", "es_lote_negativo", "INTEGER DEFAULT 0")
+        self.cursor.execute(
+            """
+            SELECT *
+            FROM detalles_compra
+            WHERE COALESCE(es_lote_negativo, 0) = 1 OR COALESCE(cantidad, 0) < 0
+            """
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def _ensure_lote_negativo(self, producto_id: int, create_if_missing: bool) -> Optional[dict]:
+        """Garantiza un único lote negativo por producto y devuelve su fila."""
+        self.ensure_column("detalles_compra", "es_lote_negativo", "INTEGER DEFAULT 0")
+        self.cursor.execute(
+            """
+            SELECT *
+            FROM detalles_compra
+            WHERE producto_id=?
+              AND (COALESCE(es_lote_negativo, 0) = 1 OR COALESCE(cantidad, 0) < 0)
+            """,
+            (producto_id,),
+        )
+        rows = [dict(row) for row in self.cursor.fetchall()]
+        negativos = [row for row in rows if (row.get("cantidad") or 0) < 0]
+
+        if not rows and not create_if_missing:
+            return None
+
+        if not rows and create_if_missing:
+            self.cursor.execute(
+                """
+                INSERT INTO detalles_compra (
+                    compra_id, producto_id, cantidad, precio_unitario,
+                    codigo_lote, registro_sanitario, es_lote_negativo
+                ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                """,
+                (None, producto_id, 0, 0, "", ""),
+            )
+            return {
+                "id": self.cursor.lastrowid,
+                "producto_id": producto_id,
+                "cantidad": 0,
+                "codigo_lote": "",
+                "registro_sanitario": "",
+                "es_lote_negativo": 1,
+            }
+
+        primary = None
+        for row in rows:
+            if row.get("es_lote_negativo") and row.get("compra_id") is None:
+                primary = row
+                break
+        if primary is None:
+            for row in rows:
+                if row.get("es_lote_negativo"):
+                    primary = row
+                    break
+        if primary is None and create_if_missing:
+            self.cursor.execute(
+                """
+                INSERT INTO detalles_compra (
+                    compra_id, producto_id, cantidad, precio_unitario,
+                    codigo_lote, registro_sanitario, es_lote_negativo
+                ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                """,
+                (None, producto_id, 0, 0, "", ""),
+            )
+            primary = {
+                "id": self.cursor.lastrowid,
+                "producto_id": producto_id,
+                "cantidad": 0,
+                "codigo_lote": "",
+                "registro_sanitario": "",
+                "es_lote_negativo": 1,
+            }
+
+        if primary is None:
+            primary = rows[0]
+
+        if not negativos and not create_if_missing:
+            return primary
+
+        total_neg = sum(float(row.get("cantidad") or 0) for row in negativos)
+        if total_neg != float(primary.get("cantidad") or 0) or not primary.get("es_lote_negativo"):
+            self.cursor.execute(
+                "UPDATE detalles_compra SET cantidad=?, es_lote_negativo=1 WHERE id=?",
+                (total_neg, primary["id"]),
+            )
+            primary = dict(primary)
+            primary["cantidad"] = total_neg
+            primary["es_lote_negativo"] = 1
+
+        for row in rows:
+            if row.get("id") == primary.get("id"):
+                continue
+            self.cursor.execute(
+                "UPDATE detalles_compra SET cantidad=0, es_lote_negativo=0 WHERE id=?",
+                (row["id"],),
+            )
+
+        return primary
+
+    def _fetch_lotes_fifo(self, producto_id: int) -> list[dict]:
+        self.ensure_column("detalles_compra", "es_lote_negativo", "INTEGER DEFAULT 0")
+        self.cursor.execute(
+            """
+            SELECT d.*, c.fecha AS fecha_compra
+            FROM detalles_compra d
+            LEFT JOIN compras c ON c.id = d.compra_id
+            WHERE d.producto_id=?
+              AND COALESCE(d.cantidad, 0) > 0
+              AND COALESCE(d.es_lote_negativo, 0) = 0
+            ORDER BY
+              CASE WHEN c.fecha IS NULL OR TRIM(c.fecha) = '' THEN 1 ELSE 0 END,
+              c.fecha ASC,
+              d.id ASC
+            """,
+            (producto_id,),
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def consumir_lotes_fifo(self, producto_id: int, cantidad: float, lote_id: Optional[int] = None) -> list[dict]:
+        """Consume stock en cadena (FIFO) y crea/ajusta lote negativo si es necesario."""
+        try:
+            cantidad_val = float(cantidad)
+        except Exception:
+            cantidad_val = 0.0
+        if cantidad_val <= 0:
+            return []
+
+        with self.lock:
+            lotes = self._fetch_lotes_fifo(producto_id)
+            if lote_id not in (None, ""):
+                try:
+                    lote_id_int = int(lote_id)
+                except Exception:
+                    lote_id_int = lote_id
+                for idx, lote in enumerate(lotes):
+                    if lote.get("id") == lote_id_int:
+                        lotes = [lotes[idx]] + [l for i, l in enumerate(lotes) if i != idx]
+                        break
+
+            consumos: list[dict] = []
+            restante = cantidad_val
+            for lote in lotes:
+                if restante <= 0:
+                    break
+                disponible = float(lote.get("cantidad") or 0)
+                if disponible <= 0:
+                    continue
+                consume = min(disponible, restante)
+                nueva_cantidad = disponible - consume
+                self.cursor.execute(
+                    "UPDATE detalles_compra SET cantidad=? WHERE id=?",
+                    (nueva_cantidad, lote["id"]),
+                )
+                consumos.append(
+                    {
+                        "lote_id": lote.get("id"),
+                        "producto_id": producto_id,
+                        "cantidad": consume,
+                        "codigo_lote": lote.get("codigo_lote", ""),
+                        "registro_sanitario": lote.get("registro_sanitario", ""),
+                        "fecha_vencimiento": lote.get("fecha_vencimiento", ""),
+                        "es_lote_negativo": 0,
+                    }
+                )
+                restante -= consume
+
+            if restante > 0:
+                negativo = self._ensure_lote_negativo(producto_id, create_if_missing=True)
+                neg_id = negativo.get("id") if isinstance(negativo, dict) else None
+                if neg_id is not None:
+                    neg_actual = float(negativo.get("cantidad") or 0)
+                    neg_nuevo = neg_actual - restante
+                    self.cursor.execute(
+                        "UPDATE detalles_compra SET cantidad=?, es_lote_negativo=1 WHERE id=?",
+                        (neg_nuevo, neg_id),
+                    )
+                    consumos.append(
+                        {
+                            "lote_id": neg_id,
+                            "producto_id": producto_id,
+                            "cantidad": restante,
+                            "codigo_lote": "",
+                            "registro_sanitario": "",
+                            "fecha_vencimiento": "",
+                            "es_lote_negativo": 1,
+                        }
+                    )
+                restante = 0
+
+            total_row = self.cursor.execute(
+                "SELECT COALESCE(SUM(cantidad), 0) AS total FROM detalles_compra WHERE producto_id=?",
+                (producto_id,),
+            ).fetchone()
+            total = total_row["total"] if total_row else 0
+            self.cursor.execute(
+                "UPDATE productos SET stock=? WHERE id=?",
+                (total, producto_id),
+            )
+            self.conn.commit()
+            return consumos
+
+    def reparar_inventario_lotes(self) -> dict:
+        """Detecta y corrige inconsistencias de lotes y stock en inventario."""
+        self.ensure_column("detalles_compra", "es_lote_negativo", "INTEGER DEFAULT 0")
+        resumen = {"productos": 0, "negativos": 0, "stocks": 0}
+        with self.lock:
+            rows = self.cursor.execute(
+                "SELECT DISTINCT producto_id FROM detalles_compra WHERE producto_id IS NOT NULL"
+            ).fetchall()
+            producto_ids = [row["producto_id"] for row in rows]
+
+            for producto_id in producto_ids:
+                detalles = self.cursor.execute(
+                    """
+                    SELECT id, compra_id, cantidad, es_lote_negativo
+                    FROM detalles_compra
+                    WHERE producto_id=?
+                    """,
+                    (producto_id,),
+                ).fetchall()
+                detalles = [dict(row) for row in detalles]
+                total_sum = sum(float(row.get("cantidad") or 0) for row in detalles)
+                total_neg = sum(
+                    float(row.get("cantidad") or 0)
+                    for row in detalles
+                    if (row.get("cantidad") or 0) < 0
+                )
+
+                if total_sum < 0:
+                    primary_id = None
+                    for row in detalles:
+                        if row.get("compra_id") is None and row.get("es_lote_negativo"):
+                            primary_id = row["id"]
+                            break
+                    if primary_id is None:
+                        self.cursor.execute(
+                            """
+                            INSERT INTO detalles_compra (
+                                compra_id, producto_id, cantidad, precio_unitario,
+                                codigo_lote, registro_sanitario, es_lote_negativo
+                            ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                            """,
+                            (None, producto_id, total_neg, 0, "", ""),
+                        )
+                        primary_id = self.cursor.lastrowid
+                    else:
+                        self.cursor.execute(
+                            """
+                            UPDATE detalles_compra
+                            SET cantidad=?, codigo_lote='', registro_sanitario='',
+                                fecha_vencimiento='', es_lote_negativo=1
+                            WHERE id=?
+                            """,
+                            (total_sum, primary_id),
+                        )
+                    for row in detalles:
+                        if row["id"] == primary_id:
+                            continue
+                        if (row.get("cantidad") or 0) != 0 or row.get("es_lote_negativo"):
+                            self.cursor.execute(
+                                "UPDATE detalles_compra SET cantidad=0, es_lote_negativo=0 WHERE id=?",
+                                (row["id"],),
+                            )
+                    resumen["negativos"] += 1
+                elif total_neg < 0:
+                    primary_id = None
+                    for row in detalles:
+                        if row.get("compra_id") is None and row.get("es_lote_negativo"):
+                            primary_id = row["id"]
+                            break
+                    if primary_id is None:
+                        self.cursor.execute(
+                            """
+                            INSERT INTO detalles_compra (
+                                compra_id, producto_id, cantidad, precio_unitario,
+                                codigo_lote, registro_sanitario, es_lote_negativo
+                            ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                            """,
+                            (None, producto_id, total_neg, 0, "", ""),
+                        )
+                        primary_id = self.cursor.lastrowid
+                    else:
+                        self.cursor.execute(
+                            "UPDATE detalles_compra SET cantidad=?, es_lote_negativo=1 WHERE id=?",
+                            (total_neg, primary_id),
+                        )
+                    for row in detalles:
+                        if row["id"] == primary_id:
+                            continue
+                        if (row.get("cantidad") or 0) < 0 or row.get("es_lote_negativo"):
+                            self.cursor.execute(
+                                "UPDATE detalles_compra SET cantidad=0, es_lote_negativo=0 WHERE id=?",
+                                (row["id"],),
+                            )
+                    resumen["negativos"] += 1
+                else:
+                    self.cursor.execute(
+                        "UPDATE detalles_compra SET es_lote_negativo=0 WHERE producto_id=?",
+                        (producto_id,),
+                    )
+
+                total_row = self.cursor.execute(
+                    "SELECT COALESCE(SUM(cantidad), 0) AS total FROM detalles_compra WHERE producto_id=?",
+                    (producto_id,),
+                ).fetchone()
+                total = total_row["total"] if total_row else 0
+                self.cursor.execute(
+                    "UPDATE productos SET stock=? WHERE id=?",
+                    (total, producto_id),
+                )
+                resumen["stocks"] += 1
+                resumen["productos"] += 1
+
+            self.conn.commit()
+        return resumen
 
     # --- NOTAS DE CRÉDITO Y DÉBITO ---
     def agregar_nota(self, tipo, venta_id, fecha, monto, motivo, detalles=None):

@@ -264,6 +264,8 @@ def generar_factura_electronica_pdf(
     if not codigo_generacion or not numero_control:
         raise ValueError("codigo_generacion and numero_control are required")
 
+    if not fecha_generacion or str(fecha_generacion).strip().lower() in {"none", "null"}:
+        fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
     try:
         fecha_emision = datetime.strptime(
             fecha_generacion.split(",")[0].strip(), "%d/%m/%Y"

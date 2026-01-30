@@ -132,7 +132,7 @@ class PurchasesTab(QWidget):
 
         self.distribuidor_combo.blockSignals(False)
         self.vendedor_combo.blockSignals(False)
-    def _create_kpi_card(self, icon_text: str, title: str, value_text: str) -> QFrame:
+    def _create_kpi_card(self, icon_text: str, title: str, value) -> QFrame:
         card = QFrame()
         card.setObjectName("ModernCard")
         layout = QVBoxLayout(card)
@@ -149,7 +149,10 @@ class PurchasesTab(QWidget):
         title_lbl.setStyleSheet("color: #6b7280; font-weight: 600;")
         layout.addWidget(title_lbl)
 
-        value_lbl = QLabel(value_text)
+        if isinstance(value, QLabel):
+            value_lbl = value
+        else:
+            value_lbl = QLabel(str(value))
         val_font = value_lbl.font()
         val_font.setPointSize(val_font.pointSize() + 4)
         val_font.setBold(True)
@@ -227,11 +230,11 @@ class PurchasesTab(QWidget):
         self.total_comision_label = QLabel("$0.00")
         self.prod_mas_label = QLabel("—")
         self.dist_frec_label = QLabel("—")
-        kpi_layout.addWidget(self._create_kpi_card("💰", "Comprado este mes", self.total_mes_label.text()))
+        kpi_layout.addWidget(self._create_kpi_card("💰", "Comprado este mes", self.total_mes_label))
         self.total_compras_label = QLabel("0")
-        kpi_layout.addWidget(self._create_kpi_card("🧾", "Número de compras", self.total_compras_label.text()))
-        kpi_layout.addWidget(self._create_kpi_card("🏆", "Más comprado", self.prod_mas_label.text()))
-        kpi_layout.addWidget(self._create_kpi_card("🏢", "Distribuidor frecuente", self.dist_frec_label.text()))
+        kpi_layout.addWidget(self._create_kpi_card("🧾", "Número de compras", self.total_compras_label))
+        kpi_layout.addWidget(self._create_kpi_card("🏆", "Más comprado", self.prod_mas_label))
+        kpi_layout.addWidget(self._create_kpi_card("🏢", "Distribuidor frecuente", self.dist_frec_label))
         kpi_layout.addStretch(1)
         main_layout.addLayout(kpi_layout)
 
@@ -437,6 +440,11 @@ class PurchasesTab(QWidget):
                     parent._actualizar_inventario_actual()
                 except Exception:  # pragma: no cover - keep UI responsive
                     logger.exception("No se pudo refrescar inventario actual tras nueva compra")
+            if parent and hasattr(parent, "_refresh_pos_if_available"):
+                try:
+                    parent._refresh_pos_if_available()
+                except Exception:  # pragma: no cover - keep UI responsive
+                    logger.exception("No se pudo refrescar POS tras nueva compra")
             if parent and hasattr(parent, "data_changed"):
                 parent.data_changed.emit()
 
@@ -543,6 +551,11 @@ class PurchasesTab(QWidget):
                 parent._actualizar_inventario_actual()
             except Exception:  # pragma: no cover - keep UI responsive
                 logger.exception("No se pudo refrescar el inventario actual tras eliminar la compra")
+        if parent and hasattr(parent, "_refresh_pos_if_available"):
+            try:
+                parent._refresh_pos_if_available()
+            except Exception:  # pragma: no cover - keep UI responsive
+                logger.exception("No se pudo refrescar POS tras eliminar la compra")
         if parent and hasattr(parent, "data_changed"):
             parent.data_changed.emit()
 
@@ -872,3 +885,14 @@ class PurchasesTab(QWidget):
             self.manager.refresh_data()
             self.refresh_filters()
             self.load_purchases()
+            parent = self.parent()
+            if parent and hasattr(parent, "_actualizar_inventario_actual"):
+                try:
+                    parent._actualizar_inventario_actual()
+                except Exception:  # pragma: no cover - keep UI responsive
+                    logger.exception("No se pudo refrescar inventario actual tras editar compra")
+            if parent and hasattr(parent, "_refresh_pos_if_available"):
+                try:
+                    parent._refresh_pos_if_available()
+                except Exception:  # pragma: no cover - keep UI responsive
+                    logger.exception("No se pudo refrescar POS tras editar compra")

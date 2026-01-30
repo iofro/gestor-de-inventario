@@ -421,7 +421,7 @@ class SalesTab(QWidget):
         self.btn_cf.clicked.connect(self._abrir_venta_cf)
 
         self.btn_cfiscal = QPushButton("Venta Crédito Fiscal")
-        self.btn_cfiscal.setObjectName("SecondaryActionButton")
+        self.btn_cfiscal.setObjectName("PrimaryActionButton")
         self.btn_cfiscal.setMinimumHeight(46)
         self.btn_cfiscal.clicked.connect(self._abrir_venta_cfiscal)
 
@@ -506,7 +506,13 @@ class SalesTab(QWidget):
         distribuidores_cf = [v.get("nombre", "") for v in getattr(self.manager, "_Distribuidores", [])]
         vendedores_trabajadores = self.manager.db.get_trabajadores(solo_vendedores=True)
 
-        self.widget_cf = RegisterSaleDialog(productos_lote, distribuidores_cf, vendedores_trabajadores, self)
+        self.widget_cf = RegisterSaleDialog(
+            productos_lote,
+            distribuidores_cf,
+            vendedores_trabajadores,
+            self,
+            refresh_callback=self._build_productos_lote,
+        )
         self.widget_cf.setWindowFlags(Qt.Widget)
         self.widget_cf.setMaximumWidth(585)
         self.widget_cf.venta_validada.connect(self._on_cf_venta_validada)
@@ -519,6 +525,7 @@ class SalesTab(QWidget):
             distribuidores_cfiscal,
             vendedores_trabajadores,
             self,
+            refresh_callback=self._build_productos_lote,
         )
         self.widget_cfiscal.set_productos_data(productos_lote)
         self.widget_cfiscal.setWindowFlags(Qt.Widget)
@@ -530,34 +537,105 @@ class SalesTab(QWidget):
         self.pos_stack.setCurrentIndex(0)
 
     def _build_productos_lote(self):
+        try:
+            self.manager.refresh_data()
+        except Exception:
+            logger.exception("POS: no se pudo refrescar manager antes de leer productos")
         productos_lote = []
-        compras = self.manager.db.get_compras()
-        productos_dict = {p["id"]: p for p in getattr(self.manager, "_products", [])}
-        for compra in compras:
-            detalles = self.manager.db.get_detalles_compra(compra["id"])
-            for detalle in detalles:
-                prod = productos_dict.get(detalle["producto_id"])
-                if not prod:
-                    continue
-                if detalle.get("cantidad", 0) > 0:
-                    productos_lote.append(
-                        {
-                            "lote_id": detalle.get("id"),
-                            "producto_id": detalle.get("producto_id"),
-                            "nombre": prod.get("nombre", ""),
-                            "codigo": prod.get("codigo", ""),
-                            "codigo_lote": detalle.get("codigo_lote", ""),
-                            "registro_sanitario": detalle.get("registro_sanitario", ""),
-                            "stock": detalle.get("cantidad", 0),
-                            "precio_unitario": detalle.get("precio_unitario", 0),
-                            "vendedor_id": prod.get("vendedor_id"),
-                            "Distribuidor_id": compra.get("Distribuidor_id"),
-                            "fecha_vencimiento": detalle.get("fecha_vencimiento", ""),
-                            "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
-                            "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
-                            "presentaciones": prod.get("presentaciones"),
-                        }
-                    )
+        productos_con_stock = set()
+        detalles_compra = self.manager.db.get_detalles_compra_todos()
+        try:
+            productos = self.manager.db.get_productos()
+        except Exception:
+            logger.exception("POS: no se pudo leer productos completos")
+            productos = getattr(self.manager, "_products", [])
+        productos_dict = {p["id"]: p for p in productos}
+        productos_lote_ids = set()
+        for detalle in detalles_compra:
+            prod = productos_dict.get(detalle["producto_id"])
+            if not prod:
+                continue
+            if detalle.get("cantidad", 0) > 0:
+                productos_con_stock.add(detalle["producto_id"])
+                productos_lote_ids.add(detalle["producto_id"])
+                productos_lote.append(
+                    {
+                        "lote_id": detalle.get("id"),
+                        "producto_id": detalle.get("producto_id"),
+                        "nombre": prod.get("nombre", ""),
+                        "codigo": prod.get("codigo", ""),
+                        "sku": prod.get("sku", ""),
+                        "codigo_lote": detalle.get("codigo_lote", ""),
+                        "registro_sanitario": detalle.get("registro_sanitario", ""),
+                        "stock": detalle.get("cantidad", 0),
+                        "precio_unitario": detalle.get("precio_unitario", 0),
+                        "vendedor_id": prod.get("vendedor_id"),
+                        "Distribuidor_id": detalle.get("compra_Distribuidor_id") or prod.get("Distribuidor_id"),
+                        "fecha_vencimiento": detalle.get("fecha_vencimiento", ""),
+                        "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
+                        "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
+                        "presentaciones": prod.get("presentaciones"),
+                    }
+                )
+        try:
+            lotes_negativos = self.manager.db.get_lotes_negativos()
+        except Exception:
+            logger.exception("POS: no se pudo leer lotes negativos")
+            lotes_negativos = []
+        for detalle in lotes_negativos:
+            prod = productos_dict.get(detalle.get("producto_id"))
+            if not prod:
+                continue
+            cantidad = detalle.get("cantidad", 0) or 0
+            producto_id = detalle.get("producto_id")
+            if cantidad >= 0 and producto_id in productos_con_stock:
+                continue
+            if cantidad == 0 and producto_id not in productos_con_stock:
+                pass
+            elif cantidad >= 0:
+                continue
+            productos_lote.append(
+                {
+                    "lote_id": detalle.get("id"),
+                    "producto_id": detalle.get("producto_id"),
+                    "nombre": prod.get("nombre", ""),
+                    "codigo": prod.get("codigo", ""),
+                    "sku": prod.get("sku", ""),
+                    "codigo_lote": detalle.get("codigo_lote", ""),
+                    "registro_sanitario": detalle.get("registro_sanitario", ""),
+                    "stock": cantidad,
+                    "precio_unitario": detalle.get("precio_unitario", 0),
+                    "vendedor_id": prod.get("vendedor_id"),
+                    "Distribuidor_id": prod.get("Distribuidor_id"),
+                    "fecha_vencimiento": detalle.get("fecha_vencimiento", ""),
+                    "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
+                    "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
+                    "presentaciones": prod.get("presentaciones"),
+                }
+            )
+            productos_lote_ids.add(producto_id)
+        for prod_id, prod in productos_dict.items():
+            if prod_id in productos_lote_ids:
+                continue
+            productos_lote.append(
+                {
+                    "lote_id": None,
+                    "producto_id": prod_id,
+                    "nombre": prod.get("nombre", ""),
+                    "codigo": prod.get("codigo", ""),
+                    "sku": prod.get("sku", ""),
+                    "codigo_lote": "",
+                    "registro_sanitario": "",
+                    "stock": 0,
+                    "precio_unitario": 0,
+                    "vendedor_id": prod.get("vendedor_id"),
+                    "Distribuidor_id": prod.get("Distribuidor_id"),
+                    "fecha_vencimiento": "",
+                    "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
+                    "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
+                    "presentaciones": prod.get("presentaciones"),
+                }
+            )
         return productos_lote
 
     def _connect_pos_cancel(self, dialog: QDialog):
@@ -1284,6 +1362,12 @@ class SalesTab(QWidget):
             QMessageBox.critical(self, "Editar DTE", f"No se pudo abrir el editor: {exc}")
 
     def load_sales(self):
+        main_window = self.main_window or self.window() or self.parent()
+        if main_window is not None and hasattr(main_window, "_sync_ventas_estado_from_envios"):
+            try:
+                main_window._sync_ventas_estado_from_envios()
+            except Exception:
+                logger.exception("No se pudo sincronizar estados antes de cargar ventas")
         ventas = self.manager.db.get_ventas(sincronizada=1)
         search = self.search_bar.text().lower()
         cliente_filter = self.client_filter.text().lower()
@@ -1391,6 +1475,36 @@ class SalesTab(QWidget):
                 row = None
         else:
             row = None
+        if not row:
+            extra = venta.get("extra")
+            if isinstance(extra, str) and extra.strip():
+                try:
+                    extra = json.loads(extra)
+                except Exception:
+                    extra = None
+            codigo = None
+            numero = None
+            if isinstance(extra, dict):
+                codigo = extra.get("codigoGeneracion") or extra.get("codigo_generacion")
+                numero = extra.get("numeroControl") or extra.get("numero_control")
+            if cursor is not None and (codigo or numero):
+                clauses = []
+                params = []
+                if codigo:
+                    clauses.append("UPPER(codigo_generacion)=?")
+                    params.append(str(codigo).strip().upper())
+                if numero:
+                    clauses.append("UPPER(numero_control)=?")
+                    params.append(str(numero).strip().upper())
+                if clauses:
+                    try:
+                        query = (
+                            "SELECT estado_ui, estado, estado_ui_tag FROM dte_envios "
+                            f"WHERE {' OR '.join(clauses)} ORDER BY id DESC LIMIT 1"
+                        )
+                        row = cursor.execute(query, params).fetchone()
+                    except Exception:
+                        row = None
         if row:
             try:
                 estado_ui = row["estado_ui"] if hasattr(row, "__getitem__") else row[0]
@@ -1516,12 +1630,17 @@ class SalesTab(QWidget):
             )
             return
         self.manager.refresh_data()
-        main_window = self.window()
+        main_window = self.main_window or self.window() or self.parent()
         if main_window and hasattr(main_window, "_actualizar_inventario_actual"):
             try:
                 main_window._actualizar_inventario_actual()
             except Exception:
                 logger.exception("Error al actualizar inventario actual tras eliminar venta")
+        if main_window and hasattr(main_window, "_refresh_pos_if_available"):
+            try:
+                main_window._refresh_pos_if_available()
+            except Exception:
+                logger.exception("Error al refrescar POS tras eliminar venta")
         self.load_sales()
         QMessageBox.information(
             self,
@@ -1542,21 +1661,30 @@ class SalesTab(QWidget):
         # Enforce orden y bloqueos: no permitir nuevos DTE si hay pendientes sin enviar
         estados = self._get_ventas_dte_estado()
         success_states = {"transmitido", "recibido", "procesado", "aceptado"}
+        allow_force = False
         pendientes_envio = [
             r for r in estados if r["estado"] and str(r["estado"]).strip().lower() not in success_states
         ]
         if pendientes_envio:
             bloqueante = pendientes_envio[0]
-            QMessageBox.warning(
-                self,
-                "DTE pendiente",
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("DTE pendiente")
+            msg_box.setText(
                 "Hay facturas con DTE generados pero NO enviados.\n"
-                f"Primero envíe la venta ID {bloqueante['id']} (fecha {bloqueante['fecha']}).",
+                f"Primero envíe la venta ID {bloqueante['id']} (fecha {bloqueante['fecha']})."
             )
-            return
+            msg_box.setInformativeText("¿Deseas generar el DTE de todas maneras?")
+            btn_continue = msg_box.addButton("Generar de todas maneras", QMessageBox.AcceptRole)
+            btn_cancel = msg_box.addButton("Cancelar", QMessageBox.RejectRole)
+            msg_box.setDefaultButton(btn_cancel)
+            msg_box.exec_()
+            if msg_box.clickedButton() != btn_continue:
+                return
+            allow_force = True
 
         sin_dte = [r for r in estados if r["estado"] is None]
-        if sin_dte:
+        if sin_dte and not allow_force:
             primera = sin_dte[0]
             if venta_id != primera["id"]:
                 QMessageBox.warning(
@@ -1663,6 +1791,17 @@ class SalesTab(QWidget):
                 self.load_sales()
             except Exception:
                 logger.exception("Error al refrescar tras eliminar venta")
+            main_window = self.main_window or self.window() or self.parent()
+            if main_window and hasattr(main_window, "_actualizar_inventario_actual"):
+                try:
+                    main_window._actualizar_inventario_actual()
+                except Exception:
+                    logger.exception("Error al actualizar inventario tras eliminar ventas")
+            if main_window and hasattr(main_window, "_refresh_pos_if_available"):
+                try:
+                    main_window._refresh_pos_if_available()
+                except Exception:
+                    logger.exception("Error al refrescar POS tras eliminar ventas")
         if eliminadas:
             mensaje = f"{eliminadas} venta(s) eliminada(s) y el inventario fue restaurado."
             if errores:

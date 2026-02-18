@@ -60,6 +60,7 @@ from utils.facturacion_records import (
 )
 import dte
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
+from utils.log_buffer import get_log_buffer_text
 import logging
 
 logger = logging.getLogger(__name__)
@@ -790,11 +791,16 @@ class SettingsDialog(QDialog):
             "Debug: Venta vs DTE",
             getattr(parent_ref, "_debug_venta_vs_dte", None),
         )
+        btn_logs = _create_tool_btn(
+            "Logs",
+            self._open_logs_dialog,
+        )
 
         grid.addWidget(btn_update, 0, 0)
         grid.addWidget(btn_firmador, 0, 1)
         grid.addWidget(btn_firmar_manual, 1, 0)
         grid.addWidget(btn_debug, 1, 1)
+        grid.addWidget(btn_logs, 2, 0)
 
         tools_layout.addLayout(grid)
         tools_layout.addStretch(1)
@@ -808,6 +814,41 @@ class SettingsDialog(QDialog):
         self.category_list.setCurrentRow(0)
 
         self._apply_styles()
+
+    def _open_logs_dialog(self) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Logs del Sistema")
+        dlg.resize(840, 520)
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel("Logs desde que se abrió el sistema")
+        font = title.font()
+        font.setBold(True)
+        title.setFont(font)
+        layout.addWidget(title)
+
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setLineWrapMode(QTextEdit.NoWrap)
+        text.setPlainText(get_log_buffer_text(0) or "Sin logs disponibles.")
+        layout.addWidget(text, 1)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        btn_refresh = QPushButton("Refrescar")
+        btn_close = QPushButton("Cerrar")
+        buttons.addWidget(btn_refresh)
+        buttons.addWidget(btn_close)
+        layout.addLayout(buttons)
+
+        def _refresh():
+            text.setPlainText(get_log_buffer_text(0) or "Sin logs disponibles.")
+
+        btn_refresh.clicked.connect(_refresh)
+        btn_close.clicked.connect(dlg.accept)
+        dlg.exec_()
 
     def _make_launcher_page(self, title: str, handler) -> QWidget:
         page = QWidget()
@@ -1138,6 +1179,7 @@ class ExportThread(QThread):
         super().__init__()
         self.filename = filename
         self.tab_order = tab_order
+        self.restore_info = None
 
     def run(self):
         """Run the export in a background thread.
@@ -1151,6 +1193,7 @@ class ExportThread(QThread):
             manager.exportar_inventario_json(
                 self.filename, tab_order=self.tab_order
             )
+            self.restore_info = getattr(manager, "last_export_restore", None)
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
@@ -3969,6 +4012,22 @@ class MainWindow(QMainWindow):
             def on_finished():
                 self._post_guardado_exitoso(filename)
                 if mostrar_mensajes:
+                    restore_info = getattr(thread, "restore_info", None)
+                    restored = []
+                    if isinstance(restore_info, dict):
+                        restored = list(restore_info.get("restored") or [])
+                    if restored:
+                        ejemplos = ", ".join(
+                            str(item.get("nombre") or item.get("id"))
+                            for item in restored[:5]
+                        )
+                        QMessageBox.warning(
+                            self,
+                            "Productos restaurados",
+                            "Se detectaron productos faltantes y se restauraron usando la última venta.\n"
+                            f"Ejemplos: {ejemplos}",
+                        )
+                if mostrar_mensajes:
                     QMessageBox.information(
                         self,
                         titulo_dialogo,
@@ -4003,6 +4062,21 @@ class MainWindow(QMainWindow):
 
         self._post_guardado_exitoso(filename)
         if mostrar_mensajes:
+            restore_info = getattr(manager, "last_export_restore", None)
+            restored = []
+            if isinstance(restore_info, dict):
+                restored = list(restore_info.get("restored") or [])
+            if restored:
+                ejemplos = ", ".join(
+                    str(item.get("nombre") or item.get("id"))
+                    for item in restored[:5]
+                )
+                QMessageBox.warning(
+                    self,
+                    "Productos restaurados",
+                    "Se detectaron productos faltantes y se restauraron usando la última venta.\n"
+                    f"Ejemplos: {ejemplos}",
+                )
             QMessageBox.information(
                 self,
                 titulo_dialogo,

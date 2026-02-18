@@ -1445,11 +1445,21 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         top_row.setSpacing(6)
         top_row.addWidget(QLabel("Distribuidor:"))
         self.Distribuidor_combo = QComboBox()
+        self.Distribuidor_combo.setEditable(True)
+        self.Distribuidor_combo.setInsertPolicy(QComboBox.NoInsert)
+        line_edit = self.Distribuidor_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setPlaceholderText("Buscar por nombre o código")
         if Distribuidores:
             if isinstance(Distribuidores[0], dict):
                 self.Distribuidor_combo.addItems([d.get("nombre", "") for d in Distribuidores])
             else:
                 self.Distribuidor_combo.addItems(Distribuidores)
+        completer = QCompleter(self.Distribuidor_combo.model(), self.Distribuidor_combo)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchContains)
+        if line_edit is not None:
+            line_edit.setCompleter(completer)
         top_row.addWidget(self.Distribuidor_combo, 1)
         self.refresh_btn = QPushButton("Refrescar")
         self.refresh_btn.setStyleSheet(
@@ -4550,11 +4560,21 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         top_row.setSpacing(6)
         top_row.addWidget(QLabel("Distribuidor:"))
         self.Distribuidor_combo = QComboBox()
+        self.Distribuidor_combo.setEditable(True)
+        self.Distribuidor_combo.setInsertPolicy(QComboBox.NoInsert)
+        line_edit = self.Distribuidor_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setPlaceholderText("Buscar por nombre o código")
         if Distribuidores:
             if isinstance(Distribuidores[0], dict):
                 self.Distribuidor_combo.addItems([d.get("nombre", "") for d in Distribuidores])
             else:
                 self.Distribuidor_combo.addItems(Distribuidores)
+        completer = QCompleter(self.Distribuidor_combo.model(), self.Distribuidor_combo)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchContains)
+        if line_edit is not None:
+            line_edit.setCompleter(completer)
         top_row.addWidget(self.Distribuidor_combo, 1)
         self.refresh_btn = QPushButton("Refrescar")
         self.refresh_btn.setStyleSheet(

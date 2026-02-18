@@ -339,6 +339,18 @@ def _ensure_admin_recovery(db: DB, parent: QDialog | None = None):
 
 if __name__ == "__main__":
     install_log_buffer()
+    root_logger = logging.getLogger()
+    if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)s %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+        root_logger.addHandler(console_handler)
+    root_logger.setLevel(logging.INFO)
     migrate_datos_negocio()
     ensure_single_instance()
     if getattr(sys, "frozen", False):

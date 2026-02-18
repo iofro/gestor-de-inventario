@@ -615,6 +615,11 @@ class InventoryManager:
         lock_timeout: float | None = 5.0,
         validate: bool = True,
     ):
+        logger.info("Exportando inventario: %s", filename)
+        self.last_export_restore = {
+            "missing_ids": [],
+            "restored": [],
+        }
         datos_negocio = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
             try:
@@ -673,10 +678,80 @@ class InventoryManager:
                     write_kv("generatedAt", datetime.utcnow().isoformat())
                     write_kv("appVersion", APP_VERSION)
                     productos_export = []
-                    for producto in self._products:
+                    all_productos = self.db.get_productos()
+                    producto_ids = {p.get("id") for p in all_productos if p.get("id") is not None}
+                    for producto in all_productos:
                         prod = dict(producto)
                         prod["sku"] = _normalize_sku_value(prod.get("sku"))
                         productos_export.append(prod)
+
+                    detalles_rows = [
+                        dict(row)
+                        for row in self.db.cursor.execute(
+                            "SELECT id, producto_id, precio_unitario, extra FROM detalles_venta"
+                        )
+                    ]
+                    missing_ids = sorted(
+                        {
+                            row.get("producto_id")
+                            for row in detalles_rows
+                            if row.get("producto_id") is not None
+                            and row.get("producto_id") not in producto_ids
+                        }
+                    )
+                    if missing_ids:
+                        logger.warning(
+                            "Productos desincronizados detectados: %s",
+                            ", ".join(str(pid) for pid in missing_ids[:10]),
+                        )
+                    self.last_export_restore["missing_ids"] = missing_ids
+
+                    if missing_ids:
+                        latest_by_product: dict[int, dict] = {}
+                        for row in detalles_rows:
+                            pid = row.get("producto_id")
+                            if pid not in missing_ids:
+                                continue
+                            current = latest_by_product.get(pid)
+                            if current is None or (row.get("id") or 0) > (current.get("id") or 0):
+                                latest_by_product[pid] = row
+
+                        for pid in missing_ids:
+                            row = latest_by_product.get(pid) or {}
+                            extra = row.get("extra")
+                            if isinstance(extra, str):
+                                try:
+                                    extra = json.loads(extra)
+                                except Exception:
+                                    extra = {}
+                            if not isinstance(extra, dict):
+                                extra = {}
+                            nombre = (
+                                extra.get("producto")
+                                or extra.get("nombre")
+                                or extra.get("descripcion")
+                                or f"Producto {pid}"
+                            )
+                            precio = row.get("precio_unitario") or 0
+                            restored = {
+                                "id": pid,
+                                "nombre": nombre,
+                                "codigo": "",
+                                "sku": "",
+                                "vendedor_id": None,
+                                "Distribuidor_id": None,
+                                "precio_compra": 0,
+                                "precio_venta_minorista": precio,
+                                "precio_venta_mayorista": precio,
+                                "stock": 0,
+                                "presentaciones": [],
+                            }
+                            productos_export.append(restored)
+                            self.last_export_restore["restored"].append(restored)
+                        logger.warning(
+                            "Restaurados %s productos desde ventas para exportación.",
+                            len(self.last_export_restore["restored"]),
+                        )
                     write_array("productos", productos_export)
                     self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
                     try:
@@ -840,6 +915,7 @@ class InventoryManager:
                 if validate:
                     _validate_inventory_file(tmp_path, filename)
                 os.replace(tmp_path, filename)
+                logger.info("Inventario exportado correctamente: %s", filename)
                 tmp_path = None
         except InventoryManagerError:
             logger.exception("Error al exportar inventario a %s", filename)
@@ -1514,9 +1590,14 @@ class InventoryManager:
 
             # Detalles de compra
             for d in data.get("detalles_compra", []):
-                compra_id = compra_id_map.get(d.get("compra_id"))
+                compra_id_raw = d.get("compra_id")
+                compra_id = compra_id_map.get(compra_id_raw)
                 if not compra_id:
-                    continue
+                    cantidad_val = d.get("cantidad", 0) or 0
+                    es_lote_negativo = bool(d.get("es_lote_negativo")) or cantidad_val < 0
+                    if not es_lote_negativo:
+                        continue
+                    compra_id = None
                 old_producto_id = d.get("producto_id")
                 producto_id = producto_id_map.get(old_producto_id)
                 if producto_id is None and old_producto_id is not None:
@@ -1567,7 +1648,7 @@ class InventoryManager:
                                 old_producto_id,
                             )
                             producto_id = None
-                if compra_id and producto_id:
+                if (compra_id is not None or d.get("compra_id") is None) and producto_id:
                     old_detalle_id = d.get("id")
                     specified_detalle_id = _coerce_int(old_detalle_id)
                     columns = [
@@ -1585,6 +1666,7 @@ class InventoryManager:
                         "comision_pct",
                         "comision_monto",
                         "comision_tipo",
+                        "es_lote_negativo",
                     ]
                     values = [
                         compra_id,
@@ -1601,6 +1683,7 @@ class InventoryManager:
                         d.get("comision_pct", 0),
                         d.get("comision_monto", 0),
                         d.get("comision_tipo", ""),
+                        1 if d.get("es_lote_negativo") else 1 if (d.get("cantidad", 0) or 0) < 0 else 0,
                     ]
                     if specified_detalle_id is not None:
                         columns.insert(0, "id")

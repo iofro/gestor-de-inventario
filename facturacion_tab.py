@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
+    QTextEdit,
     QSizePolicy,
     QScrollArea,
     QMenu,
@@ -371,19 +372,9 @@ class DTERechazadoDialog(QDialog):
 
         layout.addLayout(info_layout)
 
-        pregunta_lbl = QLabel(
-            "¿Desea regresar el correlativo al valor anterior para mantener la secuencia?"
-        )
-        pregunta_lbl.setWordWrap(True)
-        layout.addWidget(pregunta_lbl)
-
-        buttons = QDialogButtonBox()
-        self.accept_btn = buttons.addButton(
-            "Sí, regresar correlativo", QDialogButtonBox.AcceptRole
-        )
-        self.reject_btn = buttons.addButton("No, mantener", QDialogButtonBox.RejectRole)
-        buttons.accepted.connect(self.accept)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
 
 
@@ -2064,6 +2055,9 @@ class FacturacionTab(QWidget):
         self.manager = manager
         self.email_thread = None
         self._email_loading_dialog = None
+        self._send_in_progress = False
+        self.send_status_label = None
+        self.last_ident_label = None
         self._setup_ui()
         # Clean up any stale invoice references before loading
         # documents into the table. This prevents entries tied to
@@ -2221,6 +2215,12 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_eliminar)
         btns.addStretch(1)
         left_layout.addLayout(btns)
+        self.send_status_label = QLabel("")
+        self.send_status_label.setStyleSheet("color:#555; font-size:12px;")
+        left_layout.addWidget(self.send_status_label)
+        self.last_ident_label = QLabel("Ultimo DTE: -")
+        self.last_ident_label.setStyleSheet("color:#555; font-size:12px;")
+        left_layout.addWidget(self.last_ident_label)
         self._setup_test_actions(left_layout)
 
         preview_container = QWidget()
@@ -5137,7 +5137,146 @@ class FacturacionTab(QWidget):
                 enabled = True
             elif rtype == "orphan" and entry.get("json") and entry.get("estado") != "Incompleta":
                 enabled = True
+        if self._send_in_progress:
+            enabled = False
         self.btn_enviar.setEnabled(enabled)
+
+    def _set_send_in_progress(self, in_progress: bool) -> None:
+        self._send_in_progress = bool(in_progress)
+        if hasattr(self, "btn_enviar"):
+            if self._send_in_progress:
+                self.btn_enviar.setEnabled(False)
+                self.btn_enviar.setText("Enviando...")
+            else:
+                self.btn_enviar.setText("Enviar")
+                self._update_send_btn()
+        if self.send_status_label is not None:
+            self.send_status_label.setText(
+                "Envio en progreso..." if self._send_in_progress else ""
+            )
+
+    def _load_payload_from_json(self, json_path: str | None) -> tuple[dict | None, dict | None]:
+        if not json_path or not os.path.exists(json_path):
+            return None, None
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                raw_payload = json.load(fh)
+        except Exception:
+            return None, None
+        normalized = None
+        if isinstance(raw_payload, Mapping):
+            normalized = self._normalize_factura_payload(raw_payload)
+        return raw_payload if isinstance(raw_payload, dict) else None, normalized
+
+    @staticmethod
+    def _extract_ident_values(payload: Mapping[str, Any] | None) -> tuple[str | None, str | None, str | None]:
+        if not isinstance(payload, Mapping):
+            return None, None, None
+        ident = payload.get("identificacion") or payload.get("identificador") or {}
+        if not isinstance(ident, Mapping):
+            return None, None, None
+        numero_control = ident.get("numeroControl")
+        codigo = ident.get("codigoGeneracion")
+        ambiente = ident.get("ambiente")
+        return (
+            str(numero_control).strip() if numero_control else None,
+            str(codigo).strip() if codigo else None,
+            str(ambiente).strip() if ambiente else None,
+        )
+
+    @staticmethod
+    def _extract_sello_from_payload(
+        raw_payload: Mapping[str, Any] | None,
+        normalized_payload: Mapping[str, Any] | None,
+    ) -> str | None:
+        candidates: list[Mapping[str, Any]] = []
+        if isinstance(raw_payload, Mapping):
+            candidates.append(raw_payload)
+        if isinstance(normalized_payload, Mapping):
+            candidates.append(normalized_payload)
+        for candidate in candidates:
+            for key in ("selloRecibido", "selloRecepcion", "sello", "acuseRecibo"):
+                value = candidate.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            respuesta = candidate.get("respuesta")
+            if isinstance(respuesta, Mapping):
+                value = respuesta.get("selloRecibido") or respuesta.get("sello")
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
+    def _update_last_ident_label(
+        self,
+        entry: dict | None = None,
+        factura: dict | None = None,
+        data: Mapping[str, Any] | None = None,
+        json_path: str | None = None,
+    ) -> None:
+        if self.last_ident_label is None:
+            return
+        raw_payload = None
+        if data is None and json_path:
+            raw_payload, data = self._load_payload_from_json(json_path)
+        numero, codigo, _ = self._extract_ident_values(data)
+        if not numero and isinstance(entry, Mapping):
+            numero = entry.get("name") or entry.get("control") or numero
+        if not numero and isinstance(factura, Mapping):
+            numero = factura.get("control") or numero
+        if not codigo and isinstance(entry, Mapping):
+            codigo = entry.get("codigo") or codigo
+        if not numero and not codigo:
+            self.last_ident_label.setText("Ultimo DTE: -")
+            return
+        numero_text = numero or "-"
+        codigo_text = codigo or "-"
+        self.last_ident_label.setText(
+            f"Ultimo DTE: {numero_text} | Codigo: {codigo_text}"
+        )
+
+    @staticmethod
+    def _format_env_label(code: str | None) -> str:
+        if not code:
+            return "Desconocido"
+        norm = str(code).strip()
+        if norm == "01":
+            return "Produccion (01)"
+        if norm == "00":
+            return "Pruebas (00)"
+        return f"Desconocido ({norm})"
+
+    def _confirm_env_before_send(
+        self,
+        entry: dict | None,
+        factura: dict | None,
+        data: Mapping[str, Any] | None,
+        json_path: str | None,
+    ) -> bool:
+        raw_payload, normalized = self._load_payload_from_json(json_path)
+        if data is None:
+            data = normalized
+        _, _, ident_env = self._extract_ident_values(data)
+        if not ident_env:
+            return True
+        config_env = dte.resolve_ambiente(None)
+        resolved_ident = dte.resolve_ambiente(ident_env)
+        if config_env != resolved_ident:
+            doc_label = self._format_env_label(resolved_ident)
+            cfg_label = self._format_env_label(config_env)
+            answer = QMessageBox.question(
+                self,
+                "Enviar a Hacienda",
+                (
+                    "El DTE fue generado en un ambiente diferente al configurado.\n"
+                    f"Documento: {doc_label}\n"
+                    f"Configuracion: {cfg_label}\n\n"
+                    "Desea continuar?"
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            return answer == QMessageBox.Yes
+        return True
 
     def _determine_tipo_dte(self, entry: dict | None) -> str:
         """Return the DTE type code associated with the given entry.
@@ -5370,14 +5509,6 @@ class FacturacionTab(QWidget):
         entry: dict | None = None,
         factura: dict | None = None,
     ) -> bool:
-        if self._is_duplicate_rejection(resp):
-            QMessageBox.information(
-                self,
-                "Enviar a Hacienda",
-                "Este número ya está registrado en Hacienda. No se ofrece revertir correlativo.",
-            )
-            return True
-
         ident_info = dict(resp.get("identificacion") or {})
         if tipo_dte and not ident_info.get("tipoDte"):
             ident_info["tipoDte"] = tipo_dte
@@ -5417,22 +5548,26 @@ class FacturacionTab(QWidget):
             motivo,
             parent=self,
         )
-        if dialog.exec_() == QDialog.Accepted:
-            if self._revert_correlativo(ident_info):
-                QMessageBox.information(
-                    self,
-                    "Enviar a Hacienda",
-                    "La factura será eliminada del sistema.",
-                )
-                try:
-                    self._archive_rejected_invoice(entry, factura)
-                except Exception:
-                    logger.exception("Error al archivar factura rechazada")
-                    QMessageBox.warning(
-                        self,
-                        "Enviar a Hacienda",
-                        "Ocurrió un error al archivar la factura rechazada.",
-                    )
+        dialog.exec_()
+        venta_id = None
+        if entry and entry.get("row_type") == "venta":
+            venta_id = entry.get("venta_id")
+        if venta_id is None and factura:
+            venta_id = factura.get("venta_id")
+        json_path = None
+        if factura and factura.get("json"):
+            json_path = factura.get("json")
+        elif entry and entry.get("json"):
+            json_path = entry.get("json")
+        if venta_id and json_path and os.path.exists(json_path):
+            tipo_val = ident_info.get("tipoDte") or tipo_dte or self._determine_tipo_dte(entry)
+            main_window = self.window()
+            if hasattr(main_window, "_handle_dte_rechazo"):
+                meta = {
+                    "json_path": json_path,
+                    "respuesta": resp,
+                }
+                main_window._handle_dte_rechazo(venta_id, str(tipo_val).zfill(2), motivo, meta)
         return True
 
     @staticmethod
@@ -5696,6 +5831,15 @@ class FacturacionTab(QWidget):
 
         dialog.exec_()
 
+    def _handle_missing_hacienda_response(self, resp: Any, title: str) -> bool:
+        if isinstance(resp, Mapping) and resp:
+            return False
+        self._show_send_error_dialog(
+            "No hubo respuesta de Hacienda. Verifique la conexión e intente nuevamente.",
+            title,
+        )
+        return True
+
     def _mostrar_respuesta_hacienda(
         self, resp: dict | None, title: str = "Enviar a Hacienda"
     ) -> None:
@@ -5840,6 +5984,13 @@ class FacturacionTab(QWidget):
 
     def send_selected_invoice(self):
         print("UI: SEND_START")
+        if self._send_in_progress:
+            QMessageBox.information(
+                self,
+                "Enviar",
+                "Hay un envio en progreso. Espere a que termine.",
+            )
+            return
         entry = self._selected_entry()
         if not entry:
             QMessageBox.warning(self, "Enviar", "Seleccione un documento")
@@ -5857,6 +6008,11 @@ class FacturacionTab(QWidget):
                 QMessageBox.warning(self, "Enviar", "Seleccione una factura válida")
                 return
 
+        json_path = factura.get("json") if factura else None
+        raw_payload, normalized_payload = self._load_payload_from_json(json_path)
+        if normalized_payload is not None:
+            self._update_last_ident_label(entry, factura, normalized_payload, json_path)
+
         dialog = SendOptionsDialog(self)
         dialog.email_cb.setChecked(rtype not in {"retencion"})
         dialog.hacienda_cb.setChecked(True)
@@ -5869,435 +6025,464 @@ class FacturacionTab(QWidget):
         mh_success = False
         mh_response: dict | None = None
 
-        if send_hacienda:
-            if self._document_already_sent(entry, factura):
-                answer = QMessageBox.question(
-                    self,
-                    "Enviar a Hacienda",
-                    "Este documento ya fue enviado. Enviarlo nuevamente puede causar conflictos. ¿Estás seguro de continuar?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
-                )
-                if answer != QMessageBox.Yes:
+        self._set_send_in_progress(True)
+        try:
+            if send_hacienda:
+                if not self._confirm_env_before_send(entry, factura, normalized_payload, json_path):
                     return
-            if rtype == "retencion" and factura:
-                venta_id = entry.get("venta_id")
-                if not venta_id:
-                    QMessageBox.warning(self, "Enviar a Hacienda", "No se encontró la venta asociada")
-                    return
-                try:
-                    from retenciones.service import RetencionCRService
-
-                    service = RetencionCRService(self.manager.db)
-                    print("UI: CALL_ENVIAR_CR")
-                    with loading_dialog(self, "Enviando comprobante de retención…"):
-                        resp = service.send_cr(venta_id)
-                    estado = str(resp.get("estado") or "").strip().upper()
-                    sello_val = (
-                        resp.get("sello")
-                        or resp.get("selloRecibido")
-                        or resp.get("selloRecepcion")
-                        or ""
-                    )
-                    sello_norm = str(sello_val).strip()
-                    if estado in {"ACEPTADO", "PROCESADO"} and sello_norm:
-                        mh_success = True
-                        mh_response = resp
-                        QMessageBox.information(
-                            self,
-                            "Enviar a Hacienda",
-                            "Comprobante de retención enviado correctamente",
-                        )
-                    else:
-                        detalle = resp.get("detalle") or resp.get("descripcionMsg") or resp.get("observaciones")
-                        msg = detalle or "Fallo al enviar comprobante de retención"
-                        self._show_send_error_dialog(
-                            msg,
-                            "Enviar a Hacienda",
-                            resp,
-                        )
-                except Exception as exc:
-                    logger.exception("Error al enviar CR-07", exc_info=exc)
-                    QMessageBox.critical(
+                sello_actual = self._extract_sello_from_payload(raw_payload, normalized_payload)
+                if sello_actual:
+                    answer = QMessageBox.question(
                         self,
                         "Enviar a Hacienda",
-                        GENERIC_SEND_ERROR,
+                        (
+                            "Este DTE ya tiene sello de recepcion.\n"
+                            "Reenviarlo puede causar conflictos.\n\n"
+                            "Desea continuar?"
+                        ),
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No,
                     )
-            elif rtype == "orphan" and factura:
-                json_path = factura.get("json")
-                ident_data = {}
-                try:
-                    with open(json_path, "r", encoding="utf-8") as fh:
-                        raw_json = json.load(fh)
-                    ident_data = raw_json.get("identificacion") or raw_json.get("identificador") or {}
-                except Exception:
-                    ident_data = {}
-                try:
-                    print("UI: CALL_ENVIAR_DOCUMENTO")
-                    with loading_dialog(self, "Enviando a Hacienda…"):
-                        note_kind = self._resolve_orphan_note_kind(entry)
-                        if note_kind == "credito":
-                            resp = self._reenviar_nota_credito(entry, factura)
-                        elif note_kind == "debito":
-                            resp = self._reenviar_nota_debito(entry, factura)
-                        elif note_kind == "remision":
-                            resp = self._reenviar_nota(entry, factura, "remision")
-                        else:
-                            resp = dte.transmitir_dte_orphan(
-                                self.manager.db, json_path
-                            )
-                    if resp.get("http_status") in {401, 403}:
-                        message = self._auth_error_message(resp, token_msg)
-                        self._show_send_error_dialog(
-                            message,
-                            "Enviar a Hacienda",
-                            resp,
-                        )
+                    if answer != QMessageBox.Yes:
                         return
-                    estado = resp.get("estado")
-                    estado_norm = str(estado or "").strip().lower()
-                    sello_val = (
-                        resp.get("sello")
-                        or resp.get("selloRecibido")
-                        or resp.get("selloRecepcion")
-                        or ""
+
+            if send_hacienda:
+                if self._document_already_sent(entry, factura):
+                    answer = QMessageBox.question(
+                        self,
+                        "Enviar a Hacienda",
+                        "Este documento ya fue enviado. Enviarlo nuevamente puede causar conflictos. ¿Estás seguro de continuar?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No,
                     )
-                    sello_norm = str(sello_val).strip()
-                    if estado_norm in {"aceptado", "procesado"} and sello_norm:
-                        mh_success = True
-                        mh_response = resp
-                    if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
-                        self._show_send_error_dialog(
-                            "No hay conexión a Internet. Active la conexión antes de reenviar.",
-                            "Enviar a Hacienda",
-                            resp,
+                    if answer != QMessageBox.Yes:
+                        return
+                if rtype == "retencion" and factura:
+                    venta_id = entry.get("venta_id")
+                    if not venta_id:
+                        QMessageBox.warning(self, "Enviar a Hacienda", "No se encontró la venta asociada")
+                        return
+                    try:
+                        from retenciones.service import RetencionCRService
+
+                        service = RetencionCRService(self.manager.db)
+                        print("UI: CALL_ENVIAR_CR")
+                        with loading_dialog(self, "Enviando comprobante de retención…"):
+                            resp = service.send_cr(venta_id)
+                        if self._handle_missing_hacienda_response(resp, "Enviar a Hacienda"):
+                            return
+                        estado = str(resp.get("estado") or "").strip().upper()
+                        sello_val = (
+                            resp.get("sello")
+                            or resp.get("selloRecibido")
+                            or resp.get("selloRecepcion")
+                            or ""
                         )
-                    elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
-                        message = "Documento enviado y recibido correctamente"
-                        obs_text = self._format_observaciones_message(resp)
-                        if obs_text:
-                            message = f"{message}\n\n{obs_text}"
-                        QMessageBox.information(
+                        sello_norm = str(sello_val).strip()
+                        if estado in {"ACEPTADO", "PROCESADO"} and sello_norm:
+                            mh_success = True
+                            mh_response = resp
+                            QMessageBox.information(
+                                self,
+                                "Enviar a Hacienda",
+                                "Comprobante de retención enviado correctamente",
+                            )
+                        else:
+                            detalle = resp.get("detalle") or resp.get("descripcionMsg") or resp.get("observaciones")
+                            msg = detalle or "Fallo al enviar comprobante de retención"
+                            self._show_send_error_dialog(
+                                msg,
+                                "Enviar a Hacienda",
+                                resp,
+                            )
+                    except Exception as exc:
+                        logger.exception("Error al enviar CR-07", exc_info=exc)
+                        QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            message,
+                            GENERIC_SEND_ERROR,
                         )
-                    else:
-                        detalle = resp.get("detalle")
-                        if detalle:
-                            logger.debug(
-                                "Detalle de respuesta de Hacienda: %s", detalle
-                            )
-                        if str(estado).lower() == "rechazado":
-                            if self._handle_hacienda_rejection(
-                                resp, entry=entry, factura=factura
-                            ):
-                                return
-                        mensaje = resp.get("errores")
-                        if not mensaje:
-                            detalle_dict = detalle if isinstance(detalle, dict) else {}
-                            mensaje = detalle_dict.get("descripcionMsg")
-                        if mensaje:
-                            textos = _gather_rejection_texts(mensaje)
-                            mensaje = "\n".join(textos) if textos else str(mensaje)
-                        else:
-                            mensaje = "Fallo al enviar"
-                        obs_text = self._format_observaciones_message(resp)
-                        if obs_text:
-                            mensaje = f"{mensaje}\n\n{obs_text}"
-                        self._show_send_error_dialog(
-                            mensaje,
-                            "Enviar a Hacienda",
-                            resp,
-                        )
+                elif rtype == "orphan" and factura:
+                    json_path = factura.get("json")
+                    ident_data = {}
                     try:
-                        codigo_gen_resp = resp.get("codigoGeneracion") or (resp.get("identificacion") or {}).get("codigoGeneracion")
-                        num_ctrl_resp = resp.get("numeroControl") or (resp.get("identificacion") or {}).get("numeroControl")
-                        self.manager.db.registrar_envio_dte(
-                            None,
-                            "orphan",
-                            resp.get("estado"),
-                            resp.get("sello"),
-                            respuesta_json=resp,
-                            codigo_lote=resp.get("codigoLote"),
-                            codigo_generacion=codigo_gen_resp or ident_data.get("codigoGeneracion"),
-                            numero_control=num_ctrl_resp or ident_data.get("numeroControl"),
-                        )
+                        with open(json_path, "r", encoding="utf-8") as fh:
+                            raw_json = json.load(fh)
+                        ident_data = raw_json.get("identificacion") or raw_json.get("identificador") or {}
                     except Exception:
-                        logger.exception("No se pudo registrar el estado de envío para el FSE")
-                except dte.DTEValidationError as exc:
-                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    self._show_send_error_dialog(
-                        "\n".join(exc.errors),
-                        "Enviar a Hacienda",
-                    )
-                except SnapshotNotFoundError as exc:
-                    self._report_snapshot_missing(exc)
-                    return
-                except RuntimeError as exc:
-                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    exc_message = str(exc)
-                    if "CERT_INVALID" in exc_message:
-                        detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
-                        self._show_send_error_dialog(
-                            f"Error de firma: certificado inválido. {detalle}",
-                            "Firma",
+                        ident_data = {}
+                    try:
+                        print("UI: CALL_ENVIAR_DOCUMENTO")
+                        with loading_dialog(self, "Enviando a Hacienda…"):
+                            note_kind = self._resolve_orphan_note_kind(entry)
+                            if note_kind == "credito":
+                                resp = self._reenviar_nota_credito(entry, factura)
+                            elif note_kind == "debito":
+                                resp = self._reenviar_nota_debito(entry, factura)
+                            elif note_kind == "remision":
+                                resp = self._reenviar_nota(entry, factura, "remision")
+                            else:
+                                resp = dte.transmitir_dte_orphan(
+                                    self.manager.db, json_path
+                                )
+                        if self._handle_missing_hacienda_response(resp, "Enviar a Hacienda"):
+                            return
+                        if resp.get("http_status") in {401, 403}:
+                            message = self._auth_error_message(resp, token_msg)
+                            self._show_send_error_dialog(
+                                message,
+                                "Enviar a Hacienda",
+                                resp,
+                            )
+                            return
+                        estado = resp.get("estado")
+                        estado_norm = str(estado or "").strip().lower()
+                        sello_val = (
+                            resp.get("sello")
+                            or resp.get("selloRecibido")
+                            or resp.get("selloRecepcion")
+                            or ""
                         )
-                        return
-                    if "CERT_NOT_FOUND" in exc_message:
-                        detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                        sello_norm = str(sello_val).strip()
+                        if estado_norm in {"aceptado", "procesado"} and sello_norm:
+                            mh_success = True
+                            mh_response = resp
+                        if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
+                            self._show_send_error_dialog(
+                                "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                                "Enviar a Hacienda",
+                                resp,
+                            )
+                        elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                            message = "Documento enviado y recibido correctamente"
+                            obs_text = self._format_observaciones_message(resp)
+                            if obs_text:
+                                message = f"{message}\n\n{obs_text}"
+                            QMessageBox.information(
+                                self,
+                                "Enviar a Hacienda",
+                                message,
+                            )
+                        else:
+                            detalle = resp.get("detalle")
+                            if detalle:
+                                logger.debug(
+                                    "Detalle de respuesta de Hacienda: %s", detalle
+                                )
+                            if str(estado).lower() == "rechazado":
+                                if self._handle_hacienda_rejection(
+                                    resp, entry=entry, factura=factura
+                                ):
+                                    return
+                            mensaje = resp.get("errores")
+                            if not mensaje:
+                                detalle_dict = detalle if isinstance(detalle, dict) else {}
+                                mensaje = detalle_dict.get("descripcionMsg")
+                            if mensaje:
+                                textos = _gather_rejection_texts(mensaje)
+                                mensaje = "\n".join(textos) if textos else str(mensaje)
+                            else:
+                                mensaje = "Fallo al enviar"
+                            obs_text = self._format_observaciones_message(resp)
+                            if obs_text:
+                                mensaje = f"{mensaje}\n\n{obs_text}"
+                            self._show_send_error_dialog(
+                                mensaje,
+                                "Enviar a Hacienda",
+                                resp,
+                            )
+                        try:
+                            codigo_gen_resp = resp.get("codigoGeneracion") or (resp.get("identificacion") or {}).get("codigoGeneracion")
+                            num_ctrl_resp = resp.get("numeroControl") or (resp.get("identificacion") or {}).get("numeroControl")
+                            self.manager.db.registrar_envio_dte(
+                                None,
+                                "orphan",
+                                resp.get("estado"),
+                                resp.get("sello"),
+                                respuesta_json=resp,
+                                codigo_lote=resp.get("codigoLote"),
+                                codigo_generacion=codigo_gen_resp or ident_data.get("codigoGeneracion"),
+                                numero_control=num_ctrl_resp or ident_data.get("numeroControl"),
+                            )
+                        except Exception:
+                            logger.exception("No se pudo registrar el estado de envío para el FSE")
+                    except dte.DTEValidationError as exc:
+                        print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                         self._show_send_error_dialog(
-                            f"Error de firma: {detalle}",
-                            "Firma",
-                        )
-                        return
-                    if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
-                        self._show_send_error_dialog(
-                            "Error de firma: no se pudo acceder al certificado.",
-                            "Firma",
-                        )
-                        return
-                    if self._is_auth_runtime_error(exc):
-                        logger.warning("AUTH.ERROR: %s", exc)
-                        self._show_send_error_dialog(
-                            token_msg,
+                            "\n".join(exc.errors),
                             "Enviar a Hacienda",
                         )
-                    else:
-                        if self._is_signer_connection_error(exc):
-                            logger.warning(
-                                "Firmador no disponible al enviar documento",
-                                exc_info=exc,
+                    except SnapshotNotFoundError as exc:
+                        self._report_snapshot_missing(exc)
+                        return
+                    except RuntimeError as exc:
+                        print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                        exc_message = str(exc)
+                        if "CERT_INVALID" in exc_message:
+                            detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                            self._show_send_error_dialog(
+                                f"Error de firma: certificado inválido. {detalle}",
+                                "Firma",
                             )
-                            if not self._confirm_send_without_signer():
-                                return
+                            return
+                        if "CERT_NOT_FOUND" in exc_message:
+                            detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                            self._show_send_error_dialog(
+                                f"Error de firma: {detalle}",
+                                "Firma",
+                            )
+                            return
+                        if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
+                            self._show_send_error_dialog(
+                                "Error de firma: no se pudo acceder al certificado.",
+                                "Firma",
+                            )
+                            return
+                        if self._is_auth_runtime_error(exc):
+                            logger.warning("AUTH.ERROR: %s", exc)
+                            self._show_send_error_dialog(
+                                token_msg,
+                                "Enviar a Hacienda",
+                            )
+                        else:
+                            if self._is_signer_connection_error(exc):
+                                logger.warning(
+                                    "Firmador no disponible al enviar documento",
+                                    exc_info=exc,
+                                )
+                                if not self._confirm_send_without_signer():
+                                    return
+                            else:
+                                logger.exception("Error al enviar documento", exc_info=exc)
+                                self._show_send_error_dialog(
+                                    GENERIC_SEND_ERROR,
+                                    "Enviar a Hacienda",
+                                )
+                    except Exception as exc:
+                        print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                        logger.exception("Error inesperado al enviar documento", exc_info=exc)
+                        self._show_send_error_dialog(
+                            GENERIC_SEND_ERROR,
+                            "Enviar a Hacienda",
+                        )
+                else:
+                    tipo_dte = self._determine_tipo_dte(entry)
+                    try:
+                        print("UI: CALL_ENVIAR_DOCUMENTO")
+                        with loading_dialog(self, "Enviando a Hacienda…"):
+                            resp = transmitir_dte(
+                                self.manager.db,
+                                entry.get("venta_id"),
+                                tipo_dte=tipo_dte,
+                            )  # tickets también se transmiten con tipo "01"
+                        if self._handle_missing_hacienda_response(resp, "Enviar a Hacienda"):
+                            return
+                        if resp.get("http_status") in {401, 403}:
+                            message = self._auth_error_message(resp, token_msg)
+                            self._show_send_error_dialog(
+                                message,
+                                "Enviar a Hacienda",
+                                resp,
+                            )
+                            return
+                        estado = resp.get("estado")
+                        estado_norm = str(estado or "").strip().lower()
+                        sello_val = (
+                            resp.get("sello")
+                            or resp.get("selloRecibido")
+                            or resp.get("selloRecepcion")
+                            or ""
+                        )
+                        sello_norm = str(sello_val).strip()
+                        if estado_norm in {"aceptado", "procesado"} and sello_norm:
+                            mh_success = True
+                            mh_response = resp
+                            if rtype == "venta":
+                                venta_id = entry.get("venta_id")
+                                if venta_id:
+                                    try:
+                                        self._update_invoice_assets_after_mh(venta_id, resp)
+                                    except Exception:
+                                        logger.exception(
+                                            "No se pudo actualizar el PDF posterior al envío",
+                                            exc_info=True,
+                                        )
+                        if rtype == "venta":
+                            venta_id = entry.get("venta_id")
+                            sent_states = {"enviado", "aceptado", "procesado", "recibido", "transmitido"}
+                            if venta_id and estado_norm in sent_states and sello_norm:
+                                try:
+                                    self.manager.db.update_venta_estado(venta_id, "Pagada")
+                                except Exception:
+                                    logger.exception(
+                                        "No se pudo actualizar estado de venta %s tras envío",
+                                        venta_id,
+                                    )
+                        if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
+                            self._show_send_error_dialog(
+                                "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                                "Enviar a Hacienda",
+                                resp,
+                            )
+                        elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                            message = "Documento enviado y recibido correctamente"
+                            obs_text = self._format_observaciones_message(resp)
+                            if obs_text:
+                                message = f"{message}\n\n{obs_text}"
+                            QMessageBox.information(
+                                self,
+                                "Enviar a Hacienda",
+                                message,
+                            )
+                        else:
+                            detalle = resp.get("detalle")
+                            if detalle:
+                                logger.debug(
+                                    "Detalle de respuesta de Hacienda: %s", detalle
+                                )
+                            if str(estado).lower() == "rechazado":
+                                if self._handle_hacienda_rejection(
+                                    resp,
+                                    tipo_dte=tipo_dte,
+                                    entry=entry,
+                                    factura=factura,
+                                ):
+                                    return
+                            mensaje = resp.get("errores")
+                            if not mensaje:
+                                detalle_dict = detalle if isinstance(detalle, dict) else {}
+                                mensaje = detalle_dict.get("descripcionMsg")
+                            if mensaje:
+                                textos = _gather_rejection_texts(mensaje)
+                                mensaje = "\n".join(textos) if textos else str(mensaje)
+                            else:
+                                mensaje = "Fallo al enviar"
+                            obs_text = self._format_observaciones_message(resp)
+                            if obs_text:
+                                mensaje = f"{mensaje}\n\n{obs_text}"
+                            self._show_send_error_dialog(
+                                mensaje,
+                                "Enviar a Hacienda",
+                                resp,
+                            )
+                    except dte.DTEValidationError as exc:
+                        print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                        self._show_send_error_dialog(
+                            "\n".join(exc.errors),
+                            "Enviar a Hacienda",
+                        )
+                    except SnapshotNotFoundError as exc:
+                        self._report_snapshot_missing(exc)
+                        return
+                    except RuntimeError as exc:
+                        print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                        exc_message = str(exc)
+                        if "CERT_INVALID" in exc_message:
+                            detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                            self._show_send_error_dialog(
+                                f"Error de firma: certificado inválido. {detalle}",
+                                "Firma",
+                            )
+                            return
+                        if "CERT_NOT_FOUND" in exc_message:
+                            detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
+                            self._show_send_error_dialog(
+                                f"Error de firma: {detalle}",
+                                "Firma",
+                            )
+                            return
+                        if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
+                            self._show_send_error_dialog(
+                                "Error de firma: no se pudo acceder al certificado.",
+                                "Firma",
+                            )
+                            return
+                        if self._is_auth_runtime_error(exc):
+                            logger.warning("AUTH.ERROR: %s", exc)
+                            self._show_send_error_dialog(
+                                token_msg,
+                                "Enviar a Hacienda",
+                            )
                         else:
                             logger.exception("Error al enviar documento", exc_info=exc)
                             self._show_send_error_dialog(
                                 GENERIC_SEND_ERROR,
                                 "Enviar a Hacienda",
                             )
-                except Exception as exc:
-                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    logger.exception("Error inesperado al enviar documento", exc_info=exc)
-                    self._show_send_error_dialog(
-                        GENERIC_SEND_ERROR,
-                        "Enviar a Hacienda",
-                    )
-            else:
-                tipo_dte = self._determine_tipo_dte(entry)
-                try:
-                    print("UI: CALL_ENVIAR_DOCUMENTO")
-                    with loading_dialog(self, "Enviando a Hacienda…"):
-                        resp = transmitir_dte(
-                            self.manager.db,
-                            entry.get("venta_id"),
-                            tipo_dte=tipo_dte,
-                        )  # tickets también se transmiten con tipo "01"
-                    if resp.get("http_status") in {401, 403}:
-                        message = self._auth_error_message(resp, token_msg)
-                        self._show_send_error_dialog(
-                            message,
-                            "Enviar a Hacienda",
-                            resp,
-                        )
-                        return
-                    estado = resp.get("estado")
-                    estado_norm = str(estado or "").strip().lower()
-                    sello_val = (
-                        resp.get("sello")
-                        or resp.get("selloRecibido")
-                        or resp.get("selloRecepcion")
-                        or ""
-                    )
-                    sello_norm = str(sello_val).strip()
-                    if estado_norm in {"aceptado", "procesado"} and sello_norm:
-                        mh_success = True
-                        mh_response = resp
-                        if rtype == "venta":
-                            venta_id = entry.get("venta_id")
-                            if venta_id:
-                                try:
-                                    self._update_invoice_assets_after_mh(venta_id, resp)
-                                except Exception:
-                                    logger.exception(
-                                        "No se pudo actualizar el PDF posterior al envío",
-                                        exc_info=True,
-                                    )
-                    if rtype == "venta":
-                        venta_id = entry.get("venta_id")
-                        sent_states = {"enviado", "aceptado", "procesado", "recibido", "transmitido"}
-                        if venta_id and estado_norm in sent_states:
-                            try:
-                                self.manager.db.update_venta_estado(venta_id, "Pagada")
-                            except Exception:
-                                logger.exception(
-                                    "No se pudo actualizar estado de venta %s tras envío",
-                                    venta_id,
-                                )
-                    if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
-                        self._show_send_error_dialog(
-                            "No hay conexión a Internet. Active la conexión antes de reenviar.",
-                            "Enviar a Hacienda",
-                            resp,
-                        )
-                    elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
-                        message = "Documento enviado y recibido correctamente"
-                        obs_text = self._format_observaciones_message(resp)
-                        if obs_text:
-                            message = f"{message}\n\n{obs_text}"
-                        QMessageBox.information(
-                            self,
-                            "Enviar a Hacienda",
-                            message,
-                        )
-                    else:
-                        detalle = resp.get("detalle")
-                        if detalle:
-                            logger.debug(
-                                "Detalle de respuesta de Hacienda: %s", detalle
-                            )
-                        if str(estado).lower() == "rechazado":
-                            if self._handle_hacienda_rejection(
-                                resp,
-                                tipo_dte=tipo_dte,
-                                entry=entry,
-                                factura=factura,
-                            ):
-                                return
-                        mensaje = resp.get("errores")
-                        if not mensaje:
-                            detalle_dict = detalle if isinstance(detalle, dict) else {}
-                            mensaje = detalle_dict.get("descripcionMsg")
-                        if mensaje:
-                            textos = _gather_rejection_texts(mensaje)
-                            mensaje = "\n".join(textos) if textos else str(mensaje)
-                        else:
-                            mensaje = "Fallo al enviar"
-                        obs_text = self._format_observaciones_message(resp)
-                        if obs_text:
-                            mensaje = f"{mensaje}\n\n{obs_text}"
-                        self._show_send_error_dialog(
-                            mensaje,
-                            "Enviar a Hacienda",
-                            resp,
-                        )
-                except dte.DTEValidationError as exc:
-                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    self._show_send_error_dialog(
-                        "\n".join(exc.errors),
-                        "Enviar a Hacienda",
-                    )
-                except SnapshotNotFoundError as exc:
-                    self._report_snapshot_missing(exc)
-                    return
-                except RuntimeError as exc:
-                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    exc_message = str(exc)
-                    if "CERT_INVALID" in exc_message:
-                        detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
-                        self._show_send_error_dialog(
-                            f"Error de firma: certificado inválido. {detalle}",
-                            "Firma",
-                        )
-                        return
-                    if "CERT_NOT_FOUND" in exc_message:
-                        detalle = exc_message.split(":", 1)[1].strip() if ":" in exc_message else exc_message
-                        self._show_send_error_dialog(
-                            f"Error de firma: {detalle}",
-                            "Firma",
-                        )
-                        return
-                    if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
-                        self._show_send_error_dialog(
-                            "Error de firma: no se pudo acceder al certificado.",
-                            "Firma",
-                        )
-                        return
-                    if self._is_auth_runtime_error(exc):
-                        logger.warning("AUTH.ERROR: %s", exc)
-                        self._show_send_error_dialog(
-                            token_msg,
-                            "Enviar a Hacienda",
-                        )
-                    else:
-                        logger.exception("Error al enviar documento", exc_info=exc)
+                    except Exception as exc:
+                        print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                        logger.exception("Error inesperado al enviar documento", exc_info=exc)
                         self._show_send_error_dialog(
                             GENERIC_SEND_ERROR,
                             "Enviar a Hacienda",
                         )
-                except Exception as exc:
-                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    logger.exception("Error inesperado al enviar documento", exc_info=exc)
-                    self._show_send_error_dialog(
-                        GENERIC_SEND_ERROR,
-                        "Enviar a Hacienda",
+
+            if not send_email:
+                return
+
+            if rtype == "venta" and factura:
+                venta_id = factura.get("venta_id")
+                if send_hacienda and not mh_success:
+                    QMessageBox.warning(
+                        self,
+                        "Enviar por correo",
+                        (
+                            "No se enviará el correo porque Hacienda no aceptó el documento."
+                            " Reintente cuando el envío sea exitoso."
+                        ),
                     )
-
-        if not send_email:
-            return
-
-        if rtype == "venta" and factura:
-            venta_id = factura.get("venta_id")
-            if send_hacienda and not mh_success:
-                QMessageBox.warning(
-                    self,
-                    "Enviar por correo",
-                    (
-                        "No se enviará el correo porque Hacienda no aceptó el documento."
-                        " Reintente cuando el envío sea exitoso."
-                    ),
+                    return
+                codigo_generacion = None
+                sello_resp = None
+                if mh_response:
+                    ident = (
+                        mh_response.get("identificacion")
+                        or mh_response.get("identificador")
+                        or {}
+                    )
+                    codigo_generacion = (
+                        (ident.get("codigoGeneracion") or "").strip().upper()
+                        or None
+                    )
+                    sello_resp = (
+                        mh_response.get("sello")
+                        or mh_response.get("selloRecibido")
+                        or mh_response.get("selloRecepcion")
+                    )
+                    if sello_resp:
+                        sello_resp = str(sello_resp).strip()
+                self._send_invoice_email(
+                    venta_id,
+                    force_regenerate=bool(send_hacienda and mh_success),
+                    expected_codigo=codigo_generacion,
+                    expected_sello=sello_resp,
                 )
-                return
-            codigo_generacion = None
-            sello_resp = None
-            if mh_response:
-                ident = (
-                    mh_response.get("identificacion")
-                    or mh_response.get("identificador")
-                    or {}
-                )
-                codigo_generacion = (
-                    (ident.get("codigoGeneracion") or "").strip().upper()
-                    or None
-                )
-                sello_resp = (
-                    mh_response.get("sello")
-                    or mh_response.get("selloRecibido")
-                    or mh_response.get("selloRecepcion")
-                )
-                if sello_resp:
-                    sello_resp = str(sello_resp).strip()
-            self._send_invoice_email(
-                venta_id,
-                force_regenerate=bool(send_hacienda and mh_success),
-                expected_codigo=codigo_generacion,
-                expected_sello=sello_resp,
-            )
-        elif rtype == "ticket":
-            if send_hacienda and not mh_success:
-                QMessageBox.warning(
-                    self,
-                    "Enviar por correo",
-                    (
-                        "No se enviará el correo porque Hacienda no aceptó el documento."
-                        " Reintente cuando el envío sea exitoso."
-                    ),
-                )
-                return
-            self._send_ticket_email(entry.get("venta_id"))
-        elif rtype == "orphan" and factura:
-            if send_hacienda and not mh_success:
-                QMessageBox.warning(
-                    self,
-                    "Enviar por correo",
-                    (
-                        "No se enviará el correo porque Hacienda no aceptó el documento."
-                        " Reintente cuando el envío sea exitoso."
-                    ),
-                )
-                return
-            self._send_orphan_email(entry)
+            elif rtype == "ticket":
+                if send_hacienda and not mh_success:
+                    QMessageBox.warning(
+                        self,
+                        "Enviar por correo",
+                        (
+                            "No se enviará el correo porque Hacienda no aceptó el documento."
+                            " Reintente cuando el envío sea exitoso."
+                        ),
+                    )
+                    return
+                self._send_ticket_email(entry.get("venta_id"))
+            elif rtype == "orphan" and factura:
+                if send_hacienda and not mh_success:
+                    QMessageBox.warning(
+                        self,
+                        "Enviar por correo",
+                        (
+                            "No se enviará el correo porque Hacienda no aceptó el documento."
+                            " Reintente cuando el envío sea exitoso."
+                        ),
+                    )
+                    return
+                self._send_orphan_email(entry)
+        finally:
+            self._set_send_in_progress(False)
 
     def _enviar_evento_contingencia(self) -> None:
         dialog = EventoContingenciaDialog(self.manager, self)
@@ -7383,17 +7568,17 @@ class FacturacionTab(QWidget):
             self.table.selectRow(item.row())
         entry = self._selected_entry()
         factura = self._selected_factura()
-        if not entry or not factura:
+        if not entry:
             return
-        json_path = factura.get("json")
-        if not json_path or not os.path.exists(json_path):
-            return
-        try:
-            with open(json_path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            data = self._normalize_factura_payload(data)
-        except Exception:
-            return
+        json_path = factura.get("json") if factura else None
+        data = None
+        if json_path and os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                data = self._normalize_factura_payload(data)
+            except Exception:
+                data = None
         chosen = self._show_invoice_context_menu(
             entry,
             factura,
@@ -7401,28 +7586,792 @@ class FacturacionTab(QWidget):
             json_path,
             global_pos=self.table.viewport().mapToGlobal(pos),
         )
-        if chosen == "ver":
+        if chosen == "ver" and data is not None and factura is not None and json_path:
             self._open_invoice_detail(entry, factura, data, json_path)
         return
 
     def _show_invoice_context_menu(self, entry, factura, data, json_path, global_pos=None):
         menu = QMenu(self)
-        ver_act = QAction("Ver detalle", self)
-        menu.addAction(ver_act)
-        compartir_act = QAction("Compartir PDF", self)
-        menu.addAction(compartir_act)
-        anular_act = QAction("Anular", self)
-        menu.addAction(anular_act)
+        ver_act = None
+        if data is not None:
+            ver_act = QAction("Ver detalle", self)
+            menu.addAction(ver_act)
+        edit_new_act = None
+        advanced_edit_act = None
+        if json_path and os.path.exists(json_path):
+            edit_new_act = QAction("Editar y crear nueva", self)
+            menu.addAction(edit_new_act)
+            advanced_edit_act = QAction("Edicion avanzada", self)
+            menu.addAction(advanced_edit_act)
+        regen_act = None
+        if self._can_regenerate_dte(entry, factura, json_path):
+            regen_act = QAction("Regenerar", self)
+            menu.addAction(regen_act)
+        delete_act = None
+        if isinstance(entry, dict) and entry.get("row_type") == "orphan":
+            delete_act = QAction("Eliminar DTE (sin tocar venta)", self)
+            menu.addAction(delete_act)
+        compartir_act = None
+        if factura and factura.get("pdf") and os.path.exists(factura.get("pdf")):
+            compartir_act = QAction("Compartir PDF", self)
+            menu.addAction(compartir_act)
+        anular_act = None
+        if data is not None:
+            anular_act = QAction("Anular", self)
+            menu.addAction(anular_act)
         chosen = menu.exec_(global_pos or QCursor.pos())
-        if chosen == anular_act:
+        if regen_act is not None and chosen == regen_act:
+            self._regenerar_dte(entry, factura, data, json_path)
+            return "regenerar"
+        if edit_new_act is not None and chosen == edit_new_act:
+            self._edit_and_create_new_dte(entry, factura, json_path)
+            return "editar_y_crear"
+        if advanced_edit_act is not None and chosen == advanced_edit_act:
+            self._advanced_edit_and_create_new_dte(entry, factura, json_path)
+            return "edicion_avanzada"
+        if delete_act is not None and chosen == delete_act:
+            self._eliminar_orphan_dte(entry)
+            return "eliminar"
+        if anular_act is not None and chosen == anular_act:
             self._anular_dte(factura, data)
             return "anular"
-        if chosen == compartir_act:
+        if compartir_act is not None and chosen == compartir_act:
             self.share_selected_invoice()
             return "compartir"
-        if chosen != ver_act:
+        if ver_act is None or chosen != ver_act:
             return None
         return "ver"
+
+    def _edit_and_create_new_dte(self, entry, factura, json_path: str | None) -> None:
+        if not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(
+                self,
+                "Editar y crear nueva",
+                "No se encontró el archivo JSON del DTE.",
+            )
+            return
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                raw_payload = json.load(fh)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Editar y crear nueva",
+                f"No se pudo leer el JSON del DTE: {exc}",
+            )
+            return
+
+        chooser = QMessageBox(self)
+        chooser.setIcon(QMessageBox.Question)
+        chooser.setWindowTitle("Editar y crear nueva")
+        chooser.setText("¿Desea editar datos de cliente o datos de producto?")
+        btn_cliente = chooser.addButton("Datos de cliente", QMessageBox.ActionRole)
+        btn_producto = chooser.addButton("Datos de producto", QMessageBox.ActionRole)
+        chooser.addButton("Cancelar", QMessageBox.RejectRole)
+        chooser.exec_()
+
+        if chooser.clickedButton() == btn_cliente:
+            base_payload = self._extract_dte_payload(raw_payload)
+            receptor = base_payload.get("receptor") if isinstance(base_payload, dict) else None
+            editor_title = "Editar datos del cliente"
+            editor_hint = "Edita únicamente el objeto JSON del receptor."
+            edited_receptor = self._open_json_editor(receptor or {}, editor_title, editor_hint)
+            if edited_receptor is None:
+                return
+            base_payload["receptor"] = edited_receptor
+            self._create_new_dte_from_payload(
+                base_payload,
+                entry,
+                factura,
+            )
+            return
+
+        if chooser.clickedButton() == btn_producto:
+            editor_title = "Editar JSON completo"
+            editor_hint = "Edita todo el contenido del JSON del DTE."
+            edited_payload = self._open_json_editor(raw_payload, editor_title, editor_hint)
+            if edited_payload is None:
+                return
+            base_payload = self._extract_dte_payload(edited_payload)
+            if not isinstance(base_payload, dict) or not base_payload:
+                QMessageBox.warning(
+                    self,
+                    "Editar y crear nueva",
+                    "El JSON editado no contiene un DTE válido.",
+                )
+                return
+            self._create_new_dte_from_payload(
+                base_payload,
+                entry,
+                factura,
+            )
+            return
+
+    def _advanced_edit_and_create_new_dte(self, entry, factura, json_path: str | None) -> None:
+        if not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(
+                self,
+                "Edicion avanzada",
+                "No se encontro el archivo JSON del DTE.",
+            )
+            return
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                raw_payload = json.load(fh)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Edicion avanzada",
+                f"No se pudo leer el JSON del DTE: {exc}",
+            )
+            return
+
+        edited_payload = self._open_json_editor(
+            raw_payload,
+            "Edicion avanzada",
+            "Edita todo el contenido del JSON del DTE.",
+        )
+        if edited_payload is None:
+            return
+
+        base_payload = self._extract_dte_payload(edited_payload)
+        if not isinstance(base_payload, dict) or not base_payload:
+            QMessageBox.warning(
+                self,
+                "Edicion avanzada",
+                "El JSON editado no contiene un DTE valido.",
+            )
+            return
+
+        options = self._choose_advanced_edit_options()
+        if options is None:
+            return
+
+        self._create_new_dte_from_payload(
+            base_payload,
+            entry,
+            factura,
+            keep_emission_datetime=options["keep_emission_datetime"],
+            keep_codigo_generacion=options["keep_codigo_generacion"],
+            keep_sello=options["keep_sello"],
+            keep_numero_control=options["keep_numero_control"],
+            allow_path_collision=options["allow_path_collision"],
+        )
+
+    def _choose_advanced_edit_options(self) -> dict | None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Edicion avanzada")
+        layout = QFormLayout(dlg)
+
+        fecha_cb = QComboBox(dlg)
+        fecha_cb.addItem("Mantener fecha/hora del JSON", "keep")
+        fecha_cb.addItem("Usar fecha/hora actuales", "new")
+        layout.addRow("Fecha de emision", fecha_cb)
+
+        codigo_cb = QComboBox(dlg)
+        codigo_cb.addItem("Mantener codigo de generacion", "keep")
+        codigo_cb.addItem("Generar nuevo codigo de generacion", "new")
+        layout.addRow("Codigo de generacion", codigo_cb)
+
+        sello_cb = QComboBox(dlg)
+        sello_cb.addItem("Mantener sello actual", "keep")
+        sello_cb.addItem("Generar sin sello", "new")
+        layout.addRow("Sello de recepcion", sello_cb)
+
+        correlativo_cb = QComboBox(dlg)
+        correlativo_cb.addItem("Mantener correlativo del archivo", "keep")
+        correlativo_cb.addItem("Generar nuevo correlativo (cronologico)", "new")
+        layout.addRow("Numero de control", correlativo_cb)
+
+        info = QLabel(
+            "Si el mismo numero de control ya existe en archivos, se guardara con nombre alterno sin cambiar el numero del JSON."
+        )
+        info.setWordWrap(True)
+        layout.addRow(info)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dlg)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addRow(buttons)
+
+        if dlg.exec_() != QDialog.Accepted:
+            return None
+
+        keep_numero = correlativo_cb.currentData() == "keep"
+        return {
+            "keep_emission_datetime": fecha_cb.currentData() == "keep",
+            "keep_codigo_generacion": codigo_cb.currentData() == "keep",
+            "keep_sello": sello_cb.currentData() == "keep",
+            "keep_numero_control": keep_numero,
+            "allow_path_collision": keep_numero,
+        }
+
+    def _resolve_non_colliding_paths(self, json_path: str, pdf_path: str) -> tuple[str, str]:
+        if not os.path.exists(json_path) and not os.path.exists(pdf_path):
+            return json_path, pdf_path
+        json_base, json_ext = os.path.splitext(json_path)
+        pdf_base, pdf_ext = os.path.splitext(pdf_path)
+        idx = 1
+        while True:
+            candidate_json = f"{json_base}_edicion_{idx}{json_ext}"
+            candidate_pdf = f"{pdf_base}_edicion_{idx}{pdf_ext}"
+            if not os.path.exists(candidate_json) and not os.path.exists(candidate_pdf):
+                return candidate_json, candidate_pdf
+            idx += 1
+
+    @staticmethod
+    def _extract_dte_payload(payload: Any) -> dict:
+        if isinstance(payload, dict):
+            inner = payload.get("dteJson")
+            if isinstance(inner, dict):
+                return dict(inner)
+            return dict(payload)
+        if isinstance(payload, Mapping):
+            inner = payload.get("dteJson")
+            if isinstance(inner, Mapping):
+                return dict(inner)
+            return dict(payload)
+        return {}
+
+    def _open_json_editor(self, content: Any, title: str, hint: str) -> dict | None:
+        editor = QDialog(self)
+        editor.setWindowTitle(title)
+        layout = QVBoxLayout(editor)
+        layout.addWidget(QLabel(hint))
+        text_edit = QTextEdit()
+        try:
+            text_edit.setPlainText(json.dumps(content or {}, ensure_ascii=False, indent=2))
+        except Exception:
+            text_edit.setPlainText("{}")
+        text_edit.setLineWrapMode(QTextEdit.NoWrap)
+        layout.addWidget(text_edit)
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        btn_cancel = QPushButton("Cancelar")
+        btn_ok = QPushButton("Guardar y crear nuevo DTE")
+        btns.addWidget(btn_cancel)
+        btns.addWidget(btn_ok)
+        layout.addLayout(btns)
+        btn_cancel.clicked.connect(editor.reject)
+        btn_ok.clicked.connect(editor.accept)
+
+        if editor.exec_() != QDialog.Accepted:
+            return None
+
+        try:
+            parsed = json.loads(text_edit.toPlainText() or "{}")
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                title,
+                f"No se pudo interpretar el JSON: {exc}",
+            )
+            return None
+        if not isinstance(parsed, dict):
+            QMessageBox.warning(
+                self,
+                title,
+                "El contenido debe ser un objeto JSON.",
+            )
+            return None
+        return parsed
+
+    def _create_new_dte_from_payload(
+        self,
+        dte_payload: dict,
+        entry,
+        factura,
+        *,
+        keep_emission_datetime: bool = False,
+        keep_codigo_generacion: bool = False,
+        keep_sello: bool = False,
+        keep_numero_control: bool = False,
+        allow_path_collision: bool = False,
+    ) -> None:
+        if not isinstance(dte_payload, dict) or not dte_payload:
+            QMessageBox.warning(
+                self,
+                "Crear nuevo DTE",
+                "No se encontró un payload válido para generar el DTE.",
+            )
+            return
+
+        ident = dte_payload.get("identificacion") or dte_payload.get("identificador") or {}
+        if not isinstance(ident, Mapping):
+            ident = {}
+        ident = dict(ident)
+
+        tipo_dte = str(
+            ident.get("tipoDte")
+            or ident.get("tipoDocumento")
+            or ident.get("tipo")
+            or ""
+        ).strip().zfill(2)
+        if not tipo_dte:
+            QMessageBox.warning(
+                self,
+                "Crear nuevo DTE",
+                "No se pudo determinar el tipo de DTE desde el JSON.",
+            )
+            return
+
+        def _coerce_int(value, default):
+            try:
+                return int(str(value).strip())
+            except (TypeError, ValueError):
+                return default
+
+        tipo_operacion = _coerce_int(ident.get("tipoOperacion"), 1)
+        tipo_modelo = _coerce_int(ident.get("tipoModelo"), 1)
+        ambiente = str(ident.get("ambiente") or "00").strip() or "00"
+
+        header = dte.generar_cabecera_dte_data(
+            tipo_modelo,
+            tipo_operacion,
+            tipo_dte,
+            self.manager.db,
+            ambiente=ambiente,
+        )
+
+        old_numero = ident.get("numeroControl")
+        old_codigo = str(ident.get("codigoGeneracion") or "").strip().upper()
+        old_numero_text = str(old_numero or "").strip().upper()
+        old_sello = str(
+            dte_payload.get("selloRecibido")
+            or dte_payload.get("selloRecepcion")
+            or dte_payload.get("sello")
+            or ""
+        ).strip().upper()
+        now = datetime.now()
+        ident["codigoGeneracion"] = (
+            old_codigo if keep_codigo_generacion and old_codigo else header["codigo_generacion"]
+        )
+        ident["numeroControl"] = (
+            old_numero_text if keep_numero_control and old_numero_text else header["numero_control"]
+        )
+        existing_fec_emi = str(ident.get("fecEmi") or "").strip()
+        existing_hor_emi = str(ident.get("horEmi") or "").strip()
+        if keep_emission_datetime:
+            ident["fecEmi"] = existing_fec_emi or now.strftime("%Y-%m-%d")
+            ident["horEmi"] = existing_hor_emi or now.strftime("%H:%M:%S")
+        else:
+            ident["fecEmi"] = now.strftime("%Y-%m-%d")
+            ident["horEmi"] = now.strftime("%H:%M:%S")
+        ident["tipoOperacion"] = header["tipo_operacion"]
+        ident["tipoModelo"] = header["tipo_modelo"]
+        ident["ambiente"] = header["ambiente"]
+
+        dte_payload["identificacion"] = ident
+        dte_payload.pop("identificador", None)
+        for key in (
+            "selloRecibido",
+            "selloRecepcion",
+            "sello",
+            "firmaElectronica",
+            "firma",
+            "respuesta",
+            "acuseRecibo",
+            "acuseFirma",
+        ):
+            dte_payload.pop(key, None)
+        if keep_sello and old_sello:
+            dte_payload["selloRecibido"] = old_sello
+
+        doc_type = self._resolve_doc_type_from_tipo_dte(tipo_dte)
+        cliente_nombre = _facturacion_extract_cliente_nombre(dte_payload) or ""
+        if doc_type:
+            pdf_path, new_json_path = get_dte_document_paths(
+                ident.get("fecEmi"),
+                cliente_nombre,
+                ident.get("numeroControl"),
+                doc_type,
+            )
+        else:
+            pdf_path, new_json_path = get_document_paths(
+                ident.get("fecEmi"),
+                cliente_nombre,
+                ident.get("numeroControl"),
+                entry.get("tipo") if isinstance(entry, dict) else "documento",
+            )
+
+        if os.path.exists(new_json_path) or os.path.exists(pdf_path):
+            if allow_path_collision:
+                new_json_path, pdf_path = self._resolve_non_colliding_paths(new_json_path, pdf_path)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Crear nuevo DTE",
+                    "El correlativo generado ya existe. Intente nuevamente.",
+                )
+                return
+
+        try:
+            _, token = sign_and_save(dte_payload, new_json_path, return_token=True)
+            persist_client_json(new_json_path, dte_payload, firma=token)
+        except Exception as exc:
+            logger.exception("No se pudo firmar el DTE nuevo")
+            QMessageBox.warning(
+                self,
+                "Crear nuevo DTE",
+                f"No se pudo firmar el DTE: {exc}",
+            )
+            return
+
+        pdf_entry = {
+            "json": new_json_path,
+            "pdf": pdf_path,
+            "tipo": entry.get("tipo") if isinstance(entry, dict) else None,
+        }
+        if not pdf_entry["tipo"]:
+            pdf_entry["tipo"] = TIPO_DTE_DESC.get(tipo_dte, "Factura")
+
+        pdf_result = self._build_invoice_pdf_from_json(
+            pdf_entry,
+            base_pdf_path=pdf_path,
+        )
+        if not pdf_result or not os.path.exists(pdf_result):
+            QMessageBox.warning(
+                self,
+                "Crear nuevo DTE",
+                "Se generó el JSON, pero no se pudo crear el PDF.",
+            )
+
+        try:
+            db = self.manager.db
+            venta_id = None
+            db.add_factura_pdf(venta_id, pdf_entry["tipo"], pdf_path)
+        except Exception:
+            logger.exception("No se pudo registrar el nuevo DTE en facturas_pdf")
+
+        msg = "Nuevo DTE generado correctamente."
+        if old_numero:
+            msg = f"Nuevo DTE generado correctamente. Correlativo anterior: {old_numero}."
+        QMessageBox.information(
+            self,
+            "Crear nuevo DTE",
+            msg,
+        )
+        self._update_last_ident_label(entry, factura, dte_payload, new_json_path)
+        self.refresh_and_reload()
+
+    def _eliminar_orphan_dte(self, entry: dict) -> None:
+        if not entry or entry.get("row_type") != "orphan":
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar",
+            "¿Eliminar este DTE sin tocar la venta?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            ok = self._delete_invoice_entry(entry)
+        except Exception:
+            logger.exception("No se pudo eliminar el DTE sin venta")
+            ok = False
+        if not ok:
+            QMessageBox.warning(
+                self,
+                "Eliminar",
+                "No se pudo eliminar el DTE seleccionado.",
+            )
+            return
+        self.load_invoices()
+
+    def _can_regenerate_dte(
+        self,
+        entry: dict | None,
+        factura: dict | None,
+        json_path: str | None,
+    ) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        row_type = entry.get("row_type")
+        if row_type not in {"venta", "ticket", "orphan"}:
+            return False
+        if entry.get("venta_id"):
+            return True
+        if json_path and os.path.exists(json_path):
+            return True
+        if factura and factura.get("json") and os.path.exists(factura.get("json")):
+            return True
+        return False
+
+    def _regenerar_dte(self, entry, factura, data, json_path) -> None:
+        if not isinstance(entry, dict):
+            return
+        raw_payload = None
+        if data is None and json_path:
+            raw_payload, data = self._load_payload_from_json(json_path)
+        sello_actual = self._extract_sello_from_payload(raw_payload, data)
+        confirm_text = "Regenerar creara un nuevo numeroControl."
+        if sello_actual:
+            confirm_text = (
+                "Este DTE ya tiene sello de recepcion.\n"
+                "Regenerar creara un nuevo numeroControl."
+            )
+        answer = QMessageBox.question(
+            self,
+            "Regenerar",
+            confirm_text,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        venta_id = entry.get("venta_id")
+        if venta_id:
+            parent = self.parent() or self.window()
+            regen_fn = None
+            if parent and hasattr(parent, "_generar_nueva_factura_electronica"):
+                regen_fn = getattr(parent, "_generar_nueva_factura_electronica")
+            if callable(regen_fn):
+                regen_fn(int(venta_id))
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Regenerar",
+                    "No se pudo iniciar la regeneración para la venta seleccionada.",
+                )
+            return
+
+        if json_path and os.path.exists(json_path) and data is not None:
+            self._regenerar_orphan_dte(entry, factura, data, json_path, confirm=False)
+            return
+
+        QMessageBox.warning(
+            self,
+            "Regenerar",
+            "No se encontró el JSON del DTE para regenerar.",
+        )
+        return
+
+    def _resolve_doc_type_from_tipo_dte(self, tipo_dte: str | None) -> str | None:
+        if not tipo_dte:
+            return None
+        tipo = str(tipo_dte).strip().zfill(2)
+        mapping = {
+            "01": "ConsumidorFinal",
+            "03": "CreditoFiscal",
+            "04": "NotaRemision",
+            "05": "NotaCredito",
+            "06": "NotaDebito",
+            "14": "SujetoExcluido",
+        }
+        return mapping.get(tipo)
+
+    def _regenerar_orphan_dte(self, entry, factura, data, json_path, *, confirm: bool = True) -> None:
+        if not entry or not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(
+                self,
+                "Regenerar",
+                "No se encontró el JSON del DTE para regenerar.",
+            )
+            return
+
+        logger.info(
+            "REGENERAR.ORPHAN: start json=%s pdf=%s",
+            json_path,
+            entry.get("pdf") if isinstance(entry, dict) else None,
+        )
+
+        if confirm:
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("Reemplazar DTE")
+            msg_box.setText(
+                "Este DTE no tiene venta. Regenerarlo creara un nuevo numeroControl."
+            )
+            msg_box.setInformativeText(
+                "Proceder solo si esta seguro de su decision."
+            )
+            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg_box.setDefaultButton(QMessageBox.No)
+            if msg_box.exec_() != QMessageBox.Yes:
+                return
+
+        payload_root = None
+        if isinstance(data, Mapping):
+            payload_root = data.get("dteJson") if isinstance(data.get("dteJson"), Mapping) else data
+        if not isinstance(payload_root, Mapping):
+            QMessageBox.warning(
+                self,
+                "Regenerar",
+                "El JSON no contiene datos validos para regenerar el DTE.",
+            )
+            return
+
+        dte_payload = dict(payload_root)
+        ident = dte_payload.get("identificacion") or dte_payload.get("identificador") or {}
+        if not isinstance(ident, Mapping):
+            ident = {}
+        ident = dict(ident)
+
+        tipo_dte = str(
+            ident.get("tipoDte")
+            or ident.get("tipoDocumento")
+            or ident.get("tipo")
+            or ""
+        ).strip().zfill(2)
+        if not tipo_dte:
+            QMessageBox.warning(
+                self,
+                "Regenerar",
+                "No se pudo determinar el tipo de DTE desde el JSON.",
+            )
+            return
+
+        def _coerce_int(value, default):
+            try:
+                return int(str(value).strip())
+            except (TypeError, ValueError):
+                return default
+
+        tipo_operacion = _coerce_int(ident.get("tipoOperacion"), 1)
+        tipo_modelo = _coerce_int(ident.get("tipoModelo"), 1)
+        ambiente = str(ident.get("ambiente") or "00").strip() or "00"
+
+        header = dte.generar_cabecera_dte_data(
+            tipo_modelo,
+            tipo_operacion,
+            tipo_dte,
+            self.manager.db,
+            ambiente=ambiente,
+        )
+
+        old_numero = ident.get("numeroControl")
+        now = datetime.now()
+        ident["codigoGeneracion"] = header["codigo_generacion"]
+        ident["numeroControl"] = header["numero_control"]
+        ident["fecEmi"] = now.strftime("%Y-%m-%d")
+        ident["horEmi"] = now.strftime("%H:%M:%S")
+        ident["tipoOperacion"] = header["tipo_operacion"]
+        ident["tipoModelo"] = header["tipo_modelo"]
+        ident["ambiente"] = header["ambiente"]
+
+        logger.info(
+            "REGENERAR.ORPHAN: ident tipo=%s old_numero=%s new_numero=%s codigo=%s",
+            tipo_dte,
+            old_numero,
+            ident.get("numeroControl"),
+            ident.get("codigoGeneracion"),
+        )
+
+        dte_payload["identificacion"] = ident
+        dte_payload.pop("identificador", None)
+        for key in (
+            "selloRecibido",
+            "selloRecepcion",
+            "sello",
+            "firmaElectronica",
+            "firma",
+            "respuesta",
+            "acuseRecibo",
+            "acuseFirma",
+        ):
+            dte_payload.pop(key, None)
+
+        doc_type = self._resolve_doc_type_from_tipo_dte(tipo_dte)
+        cliente_nombre = _facturacion_extract_cliente_nombre(dte_payload) or ""
+        if doc_type:
+            pdf_path, new_json_path = get_dte_document_paths(
+                ident.get("fecEmi"),
+                cliente_nombre,
+                ident.get("numeroControl"),
+                doc_type,
+            )
+        else:
+            pdf_path, new_json_path = get_document_paths(
+                ident.get("fecEmi"),
+                cliente_nombre,
+                ident.get("numeroControl"),
+                entry.get("tipo") or "documento",
+            )
+
+        if os.path.exists(new_json_path) or os.path.exists(pdf_path):
+            QMessageBox.warning(
+                self,
+                "Regenerar",
+                "El correlativo generado ya existe. Intente nuevamente.",
+            )
+            return
+
+        archive_tag = datetime.now().strftime("reemplazado_%Y%m%d_%H%M%S")
+        extra_data = {
+            "numeroControl": old_numero,
+            "tipoDte": tipo_dte,
+        }
+        self._cleanup_invoice_artifacts(
+            entry.get("venta_id"),
+            pdf_path=entry.get("pdf") or (factura.get("pdf") if factura else None),
+            ticket_path=None,
+            dte_json_path=json_path,
+            archive_subdir=archive_tag,
+            extra_data=extra_data,
+            prompt_revert=False,
+        )
+
+        logger.info(
+            "REGENERAR.ORPHAN: old_json=%s new_json=%s new_pdf=%s archive=%s",
+            json_path,
+            new_json_path,
+            pdf_path,
+            archive_tag,
+        )
+
+        try:
+            _, token = sign_and_save(dte_payload, new_json_path, return_token=True)
+            persist_client_json(new_json_path, dte_payload, firma=token)
+        except Exception as exc:
+            logger.exception("No se pudo firmar el DTE regenerado")
+            QMessageBox.warning(
+                self,
+                "Regenerar",
+                f"No se pudo firmar el DTE: {exc}",
+            )
+            return
+
+        logger.info(
+            "REGENERAR.ORPHAN: json firmado y guardado en %s",
+            new_json_path,
+        )
+
+        pdf_entry = {
+            "json": new_json_path,
+            "pdf": pdf_path,
+            "tipo": entry.get("tipo"),
+        }
+        pdf_result = self._build_invoice_pdf_from_json(
+            pdf_entry,
+            base_pdf_path=pdf_path,
+        )
+        if not pdf_result or not os.path.exists(pdf_result):
+            QMessageBox.warning(
+                self,
+                "Regenerar",
+                "Se genero el JSON, pero no se pudo crear el PDF.",
+            )
+            logger.warning(
+                "REGENERAR.ORPHAN: fallo PDF json=%s pdf=%s",
+                new_json_path,
+                pdf_path,
+            )
+        else:
+            logger.info(
+                "REGENERAR.ORPHAN: PDF regenerado en %s",
+                pdf_result,
+            )
+
+        QMessageBox.information(
+            self,
+            "Regenerar",
+            "DTE regenerado correctamente.",
+        )
+        self._update_last_ident_label(entry, factura, dte_payload, new_json_path)
+        self.refresh_and_reload()
 
     def _open_invoice_detail(self, entry, factura, data, json_path):
         items = data.get("cuerpoDocumento") or []
@@ -7445,6 +8394,16 @@ class FacturacionTab(QWidget):
                 estado_manual_doc = None
         estado_doc_actual = estado_manual_doc or (entry.get("estado") if isinstance(entry, Mapping) else None)
         estado_doc_options = ["Automático", "Completa", "Sin venta"]
+        latest_hacienda_response = None
+        if self.manager and getattr(self.manager, "db", None):
+            try:
+                latest_hacienda_response = self.manager.db.get_latest_hacienda_response(
+                    venta_id=factura.get("venta_id"),
+                    codigo_generacion=ident.get("codigoGeneracion"),
+                    numero_control=ident.get("numeroControl"),
+                )
+            except Exception:
+                latest_hacienda_response = None
 
         def _apply_envio_change(selected_state: str) -> str:
             return self._update_invoice_envio_state(entry, factura, data, selected_state)
@@ -7465,6 +8424,7 @@ class FacturacionTab(QWidget):
             envio_state=current_envio,
             envio_options=envio_options,
             on_envio_change=_apply_envio_change if envio_options else None,
+            hacienda_response=latest_hacienda_response,
             document_state=estado_doc_actual,
             document_state_options=estado_doc_options,
             on_document_state_change=_apply_document_state,
@@ -7475,73 +8435,21 @@ class FacturacionTab(QWidget):
             self.refresh_and_reload()
 
     def _anular_dte(self, factura, data):
-        data = self._normalize_factura_payload(data)
+        data = FacturacionTab._normalize_factura_payload(data)
         venta_id = factura.get("venta_id")
-        venta = self.manager.db.get_venta_by_id(venta_id) if venta_id else None
-        extra = {}
-        if venta:
-            extra_raw = venta.get("extra")
-            if extra_raw:
-                try:
-                    extra = json.loads(extra_raw)
-                except Exception:
-                    extra = {}
+        try:
+            data = anulacion.prepare_factura_for_invalidacion(
+                data,
+                db=self.manager.db,
+                venta_id=venta_id,
+            )
+        except ValueError as exc:
+            QMessageBox.critical(self, "Anular DTE", str(exc))
+            return
+
         ident = data.get("identificacion", {})
         numero_control_ident = ident.get("numeroControl")
         codigo_gen_ident = ident.get("codigoGeneracion")
-        sello = data.get("selloRecibido") or extra.get("selloRecibido")
-        if not sello and venta_id:
-            row = self.manager.db.cursor.execute(
-                "SELECT sello, respuesta FROM dte_envios WHERE venta_id=? AND TRIM(sello)<>'' ORDER BY id DESC LIMIT 1",
-                (venta_id,),
-            ).fetchone()
-            if not row:
-                row = self.manager.db.cursor.execute(
-                    "SELECT sello, respuesta FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
-                    (venta_id,),
-                ).fetchone()
-            if row:
-                sello = row["sello"]
-                if not sello:
-                    resp = row["respuesta"]
-                    if resp:
-                        try:
-                            resp_json = json.loads(resp)
-                            sello = resp_json.get("selloRecibido") or resp_json.get("sello")
-                        except Exception:
-                            pass
-        if not sello:
-            try:
-                row = self.manager.db.cursor.execute(
-                    """
-                    SELECT sello, respuesta FROM dte_envios
-                    WHERE (numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?))
-                       OR (codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?))
-                    ORDER BY id DESC LIMIT 1
-                    """,
-                    (numero_control_ident or "", codigo_gen_ident or ""),
-                ).fetchone()
-            except Exception:
-                row = None
-            if row:
-                sello = row["sello"]
-                if not sello:
-                    resp = row["respuesta"]
-                    if resp:
-                        try:
-                            resp_json = json.loads(resp)
-                            sello = resp_json.get("selloRecibido") or resp_json.get("sello")
-                        except Exception:
-                            pass
-        ident = data.get("identificacion", {})
-        if not (ident.get("codigoGeneracion") and ident.get("numeroControl") and sello):
-            QMessageBox.critical(
-                self,
-                "Anular DTE",
-                "No se puede anular: falta acuse de recepción (selloRecibido)",
-            )
-            return
-        data["selloRecibido"] = sello
 
         negocio = dte._load_datos_negocio()
         responsable_nit = negocio.get("nit", "")
@@ -7608,7 +8516,11 @@ class FacturacionTab(QWidget):
             cfg = dte._load_dte_api_config()
             amb = "01" if str(cfg.get("ambiente", "")).lower().startswith("produc") else "00"
             anul_json = anulacion.build_invalidacion_json(
-                data, ui_data, ambiente=amb, db=self.manager.db
+                data,
+                ui_data,
+                ambiente=amb,
+                db=self.manager.db,
+                venta_id=venta_id,
             )
             resp = anulacion.enviar_invalidacion(self.manager.db, anul_json)
         except ValueError as exc:
@@ -10127,11 +11039,13 @@ class FacturacionTab(QWidget):
         if self.table.currentRow() < 0:
             self.preview_label.setText("Previsualización del PDF")
             self._clear_preview_files()
+            self._update_last_ident_label()
             return
         data = self._selected_entry()
         if not data:
             self.preview_label.setText("Previsualización del PDF")
             self._clear_preview_files()
+            self._update_last_ident_label()
             return
         if data.get("row_type") in ("venta", "ticket"):
             self._update_preview(data.get("venta_id"))
@@ -10142,6 +11056,17 @@ class FacturacionTab(QWidget):
             else:
                 self.preview_label.setText("No hay PDF")
                 self._clear_preview_files()
+        factura = self._selected_factura()
+        json_path = factura.get("json") if factura else None
+        payload = None
+        if json_path and os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+                payload = self._normalize_factura_payload(payload)
+            except Exception:
+                payload = None
+        self._update_last_ident_label(data, factura, payload, json_path)
 
     def _clear_preview_files(self):
         """Remove temporary preview image without deleting stored PDFs."""

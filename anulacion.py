@@ -410,9 +410,15 @@ def _merge_metadata(primary: dict, secondary: dict) -> dict:
 def _parse_respuesta_documento(respuesta_raw: str | None) -> dict | None:
     if not respuesta_raw:
         return None
-    try:
-        data = json.loads(respuesta_raw)
-    except Exception:
+    data = None
+    if isinstance(respuesta_raw, dict):
+        data = respuesta_raw
+    elif isinstance(respuesta_raw, str):
+        try:
+            data = json.loads(respuesta_raw)
+        except Exception:
+            data = None
+    else:
         return None
     if not isinstance(data, dict):
         return None
@@ -433,6 +439,250 @@ def _parse_respuesta_documento(respuesta_raw: str | None) -> dict | None:
             if isinstance(parsed, dict):
                 return parsed
     return None
+
+
+def _coerce_json_object(raw) -> dict | None:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _pick_sello_from_payload(payload: dict | None) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    candidates = [
+        payload.get("selloRecibido"),
+        payload.get("selloRecepcion"),
+        payload.get("sello"),
+    ]
+    detalle = payload.get("detalle")
+    if isinstance(detalle, dict):
+        candidates.extend(
+            [
+                detalle.get("selloRecibido"),
+                detalle.get("selloRecepcion"),
+                detalle.get("sello"),
+            ]
+        )
+    for value in candidates:
+        text = str(value or "").strip().upper()
+        if text:
+            return text
+    return ""
+
+
+def prepare_factura_for_invalidacion(
+    factura: dict,
+    *,
+    db: DB | None = None,
+    venta_id: int | None = None,
+) -> dict:
+    if not isinstance(factura, dict):
+        raise ValueError("Factura incompleta para invalidación")
+
+    resolved = dict(factura)
+    ident = resolved.get("identificacion")
+    if not isinstance(ident, dict):
+        ident = {}
+    ident = dict(ident)
+
+    metadata = _extract_metadata(resolved)
+
+    def _merge_from_source(source) -> None:
+        nonlocal metadata
+        source_obj = _coerce_json_object(source)
+        if not source_obj:
+            return
+        metadata = _merge_metadata(metadata, _extract_metadata(source_obj))
+        doc = _parse_respuesta_documento(source_obj)
+        if doc:
+            metadata = _merge_metadata(metadata, _extract_metadata(doc))
+
+    sello = str(
+        resolved.get("selloRecibido")
+        or resolved.get("selloRecepcion")
+        or resolved.get("sello")
+        or ""
+    ).strip().upper()
+
+    respuesta_payload = _coerce_json_object(resolved.get("respuesta"))
+    if respuesta_payload:
+        _merge_from_source(respuesta_payload)
+        if not sello:
+            sello = _pick_sello_from_payload(respuesta_payload)
+
+    detalle_payload = _coerce_json_object(resolved.get("detalle"))
+    if detalle_payload:
+        _merge_from_source(detalle_payload)
+        if not sello:
+            sello = _pick_sello_from_payload(detalle_payload)
+
+    extra_payload = _coerce_json_object(resolved.get("extra"))
+    if extra_payload:
+        _merge_from_source(extra_payload)
+        if not sello:
+            sello = _pick_sello_from_payload(extra_payload)
+
+    if not sello and db is not None:
+        where_parts = []
+        params: list[str | int] = []
+
+        codigo_hint = str(
+            metadata.get("codigo_generacion")
+            or ident.get("codigoGeneracion")
+            or ""
+        ).strip().upper()
+        numero_hint = str(
+            metadata.get("numero_control")
+            or ident.get("numeroControl")
+            or ""
+        ).strip().upper()
+
+        if venta_id is not None:
+            where_parts.append("venta_id=?")
+            params.append(int(venta_id))
+        if codigo_hint:
+            where_parts.append("UPPER(codigo_generacion)=?")
+            params.append(codigo_hint)
+        if numero_hint:
+            where_parts.append("UPPER(numero_control)=?")
+            params.append(numero_hint)
+
+        if where_parts:
+            try:
+                db.ensure_column("dte_envios", "respuesta", "TEXT")
+                db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+                db.ensure_column("dte_envios", "numero_control", "TEXT")
+                db.ensure_column("dte_envios", "ambiente", "TEXT")
+            except Exception:
+                pass
+
+            try:
+                rows = db.cursor.execute(
+                    "SELECT TRIM(sello) AS sello, respuesta, codigo_generacion, numero_control, ambiente "
+                    "FROM dte_envios "
+                    f"WHERE {' OR '.join(where_parts)} ORDER BY id DESC LIMIT 20",
+                    tuple(params),
+                ).fetchall()
+            except Exception:
+                rows = []
+
+            for row in rows:
+                row_dict = dict(row)
+                payload = _coerce_json_object(row_dict.get("respuesta"))
+                _merge_from_source(payload)
+                metadata = _merge_metadata(
+                    metadata,
+                    _extract_metadata(
+                        {
+                            "identificacion": {
+                                "codigoGeneracion": row_dict.get("codigo_generacion"),
+                                "numeroControl": row_dict.get("numero_control"),
+                                "ambiente": row_dict.get("ambiente"),
+                            }
+                        }
+                    ),
+                )
+                row_sello = str(row_dict.get("sello") or "").strip().upper()
+                if not row_sello and payload:
+                    row_sello = _pick_sello_from_payload(payload)
+                if row_sello:
+                    sello = row_sello
+                    if SELLO40_RE.fullmatch(sello):
+                        break
+
+            if not SELLO40_RE.fullmatch(sello):
+                try:
+                    db._ensure_dte_respuestas_hacienda_table()
+                    rows_mh = db.cursor.execute(
+                        "SELECT sello, respuesta_json, detalle_json, codigo_generacion, numero_control, ambiente "
+                        "FROM dte_respuestas_hacienda "
+                        f"WHERE {' OR '.join(where_parts)} ORDER BY id DESC LIMIT 20",
+                        tuple(params),
+                    ).fetchall()
+                except Exception:
+                    rows_mh = []
+
+                for row in rows_mh:
+                    row_dict = dict(row)
+                    payload = _coerce_json_object(row_dict.get("respuesta_json"))
+                    if payload:
+                        _merge_from_source(payload)
+                    detalle = _coerce_json_object(row_dict.get("detalle_json"))
+                    if detalle:
+                        _merge_from_source(detalle)
+                    metadata = _merge_metadata(
+                        metadata,
+                        _extract_metadata(
+                            {
+                                "identificacion": {
+                                    "codigoGeneracion": row_dict.get("codigo_generacion"),
+                                    "numeroControl": row_dict.get("numero_control"),
+                                    "ambiente": row_dict.get("ambiente"),
+                                }
+                            }
+                        ),
+                    )
+                    row_sello = str(row_dict.get("sello") or "").strip().upper()
+                    if not row_sello and payload:
+                        row_sello = _pick_sello_from_payload(payload)
+                    if row_sello:
+                        sello = row_sello
+                        if SELLO40_RE.fullmatch(sello):
+                            break
+
+    codigo_gen = str(
+        metadata.get("codigo_generacion")
+        or ident.get("codigoGeneracion")
+        or ""
+    ).strip().upper()
+    numero_control = str(
+        metadata.get("numero_control")
+        or ident.get("numeroControl")
+        or ""
+    ).strip().upper()
+    fec_emi = str(
+        metadata.get("fecha_emision")
+        or ident.get("fecEmi")
+        or ""
+    ).strip()
+    ambiente = normalize_ambiente(
+        metadata.get("ambiente")
+        or ident.get("ambiente")
+    )
+
+    if not (codigo_gen and numero_control and fec_emi):
+        raise ValueError("Factura incompleta para invalidación")
+    if not UUID36_RE.fullmatch(codigo_gen):
+        raise ValueError("codigoGeneracion de la factura inválido")
+    if not NUM_CONTROL_RE.fullmatch(numero_control):
+        raise ValueError("numeroControl de la factura inválido")
+    try:
+        datetime.strptime(fec_emi[:10], "%Y-%m-%d")
+    except Exception as exc:
+        raise ValueError("Fecha de emisión del DTE inválida") from exc
+    sello = str(sello or "").strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        raise ValueError(
+            "selloRecibido inválido; debe coincidir con el sello alfanumérico de 40 caracteres emitido por MH"
+        )
+
+    ident["codigoGeneracion"] = codigo_gen
+    ident["numeroControl"] = numero_control
+    ident["fecEmi"] = fec_emi[:10]
+    if ambiente:
+        ident["ambiente"] = ambiente
+
+    resolved["identificacion"] = ident
+    resolved["selloRecibido"] = sello
+    return resolved
 
 
 def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> list[dict]:
@@ -1393,8 +1643,18 @@ def _build_fse_anulacion_json(
     return payload
 
 def build_invalidacion_json(
-    factura: dict, ui_motivo: dict, *, ambiente: str, db: DB | None = None
+    factura: dict,
+    ui_motivo: dict,
+    *,
+    ambiente: str,
+    db: DB | None = None,
+    venta_id: int | None = None,
 ) -> dict:
+    factura = prepare_factura_for_invalidacion(
+        factura,
+        db=db,
+        venta_id=venta_id,
+    )
     ident = factura.get("identificacion") or {}
     tipo_dte_raw = ident.get("tipoDte")
     tipo_dte_str = str(tipo_dte_raw).zfill(2) if tipo_dte_raw is not None else ""

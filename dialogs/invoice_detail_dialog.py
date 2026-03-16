@@ -10,6 +10,7 @@ from decimal import Decimal
 from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
+    QHBoxLayout,
     QTableWidget,
     QTableWidgetItem,
     QLabel,
@@ -24,6 +25,7 @@ from PyQt5.QtWidgets import (
     QWidget,
     QTreeWidget,
     QTreeWidgetItem,
+    QTextEdit,
 )
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QDesktopServices
@@ -177,6 +179,7 @@ class InvoiceDetailDialog(QDialog):
         envio_state: str | None = None,
         envio_options: List[str] | None = None,
         on_envio_change: Callable[[str], str] | None = None,
+        hacienda_response: Dict | None = None,
         document_state: str | None = None,
         document_state_options: List[str] | None = None,
         on_document_state_change: Callable[[str], str] | None = None,
@@ -198,6 +201,9 @@ class InvoiceDetailDialog(QDialog):
         self._save_state_button: QPushButton | None = None
         self._current_envio_value = (envio_state or "").strip()
         self._on_envio_change = on_envio_change
+        self._hacienda_response = hacienda_response or {}
+        self._hacienda_details_edit: QTextEdit | None = None
+        self._hacienda_toggle_button: QPushButton | None = None
         self.document_state_updated = False
         self._doc_state_combo: QComboBox | None = None
         self._doc_state_label: QLabel | None = None
@@ -275,6 +281,10 @@ class InvoiceDetailDialog(QDialog):
             tabs.addTab(items_container, "Productos")
             tabs.addTab(info_widget, "Información")
             layout.addWidget(tabs)
+
+        mh_widget = self._build_hacienda_response_widget()
+        if mh_widget is not None:
+            layout.addWidget(mh_widget)
 
         envio_layout = QFormLayout()
         envio_layout.setLabelAlignment(Qt.AlignLeft)
@@ -363,6 +373,99 @@ class InvoiceDetailDialog(QDialog):
             self._save_doc_state_button.clicked.connect(self._save_document_state)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
+
+    def _build_hacienda_response_widget(self) -> QWidget | None:
+        data = self._hacienda_response
+        if not isinstance(data, Mapping) or not data:
+            return None
+
+        estado = str(data.get("estado_raw") or data.get("estado_normalizado") or "").strip()
+        descripcion = str(data.get("descripcion_msg") or "").strip()
+        sello = str(data.get("sello") or "").strip()
+        observaciones_raw = data.get("observaciones_json")
+        fecha = str(data.get("fecha_hora") or "").strip()
+
+        summary_parts: list[str] = []
+        if estado:
+            summary_parts.append(estado)
+        if descripcion:
+            summary_parts.append(descripcion)
+        if sello:
+            summary_parts.append(f"Sello: {sello}")
+        if not summary_parts:
+            summary_parts.append("Respuesta registrada")
+        summary_text = " | ".join(summary_parts)
+
+        details_lines: list[str] = []
+        details_lines.append(f"Estado: {estado or 'N/D'}")
+        if descripcion:
+            details_lines.append(f"Descripción: {descripcion}")
+        codigo_msg = str(data.get("codigo_msg") or "").strip()
+        if codigo_msg:
+            details_lines.append(f"Código: {codigo_msg}")
+        clasifica_msg = str(data.get("clasifica_msg") or "").strip()
+        if clasifica_msg:
+            details_lines.append(f"Clasificación: {clasifica_msg}")
+        if sello:
+            details_lines.append(f"Sello recepción: {sello}")
+        if fecha:
+            details_lines.append(f"Fecha/Hora: {fecha}")
+        if observaciones_raw:
+            obs_text = ""
+            try:
+                parsed_obs = json.loads(observaciones_raw)
+            except Exception:
+                parsed_obs = None
+            if isinstance(parsed_obs, list):
+                cleaned = [str(o).strip() for o in parsed_obs if str(o).strip()]
+                obs_text = "\n".join(cleaned)
+            elif isinstance(parsed_obs, dict):
+                cleaned = [f"{k}: {v}" for k, v in parsed_obs.items()]
+                obs_text = "\n".join(cleaned)
+            elif parsed_obs not in (None, ""):
+                obs_text = str(parsed_obs)
+            else:
+                obs_text = str(observaciones_raw)
+            if obs_text.strip():
+                details_lines.append("Observaciones:")
+                details_lines.append(obs_text.strip())
+
+        container = QWidget(self)
+        section_layout = QVBoxLayout(container)
+        section_layout.setContentsMargins(0, 0, 0, 0)
+        section_layout.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
+
+        toggle = QPushButton("▸ Última respuesta de Hacienda", container)
+        toggle.setCheckable(True)
+        toggle.setChecked(False)
+        toggle.setFlat(True)
+        summary_label = QLabel(summary_text, container)
+        summary_label.setWordWrap(True)
+        header_row.addWidget(toggle)
+        header_row.addWidget(summary_label, 1)
+        section_layout.addLayout(header_row)
+
+        details_edit = QTextEdit(container)
+        details_edit.setReadOnly(True)
+        details_edit.setVisible(False)
+        details_edit.setMinimumHeight(120)
+        details_edit.setPlainText("\n".join(details_lines))
+        section_layout.addWidget(details_edit)
+
+        def _toggle_details(checked: bool) -> None:
+            details_edit.setVisible(checked)
+            toggle.setText(
+                "▾ Última respuesta de Hacienda" if checked else "▸ Última respuesta de Hacienda"
+            )
+
+        toggle.toggled.connect(_toggle_details)
+        self._hacienda_details_edit = details_edit
+        self._hacienda_toggle_button = toggle
+        return container
 
     def _build_metadata_tab(self) -> QWidget | None:
         tipo_codigo = self._resolve_document_code()

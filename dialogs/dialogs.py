@@ -834,9 +834,9 @@ class ProductDialogBase:
         self.product_list.clear()
         for p in productos:
             codigo_lote = p.get("codigo_lote")
-            lote_segment = f" | Lote: {codigo_lote}" if codigo_lote else ""
+            lote_segment = f" | Lote: {codigo_lote}" if codigo_lote else " | Lote: "
             texto = (
-                f"{p.get('nombre', '')} | Código: {p.get('codigo', '')} | Stock: {p.get('stock', 0)}"
+                f"{p.get('nombre', '')} | Stock: {p.get('stock', 0)}"
                 f"{lote_segment} | Vence: {p.get('fecha_vencimiento', '')}"
             )
             item = QListWidgetItem(texto)
@@ -1517,6 +1517,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.precio_total_spin.setDecimals(2)
         self.precio_total_spin.setPrefix("$")
         grid.addWidget(self.precio_total_spin, 1, 3)
+        self._last_price_source = "unit"
 
         self.descuento_spin = QDoubleSpinBox()
         self.descuento_spin.setMinimum(0)
@@ -1589,7 +1590,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.table.setShowGrid(False)
         header_cf = self.table.horizontalHeader()
         header_cf.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        header_cf.setSectionResizeMode(0, QHeaderView.Interactive)  # Producto
+        header_cf.setSectionResizeMode(0, QHeaderView.Stretch)  # Producto
         self.table.setColumnWidth(0, 190)
         for col, width in [(1, 60), (2, 80), (3, 80), (4, 100)]:
             header_cf.setSectionResizeMode(col, QHeaderView.ResizeToContents)
@@ -2030,6 +2031,11 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         precio_total = self.precio_total_spin.value()
 
         if sender is self.precio_total_spin:
+            self._last_price_source = "total"
+        elif sender is self.precio_spin:
+            self._last_price_source = "unit"
+
+        if self._last_price_source == "total":
             precio_unitario = round(precio_total / cantidad, 6) if cantidad > 0 else 0
             self.precio_spin.blockSignals(True)
             self.precio_spin.setValue(precio_unitario)
@@ -4707,7 +4713,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         header_cf = self.table.horizontalHeader()
         header_cf.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         header_cf.setStretchLastSection(False)
-        header_cf.setSectionResizeMode(1, QHeaderView.Interactive)  # Producto
+        header_cf.setSectionResizeMode(1, QHeaderView.Stretch)  # Producto
         self.table.setColumnWidth(1, 170)
         for col, width in [(0, 60), (2, 80), (3, 80)]:
             header_cf.setSectionResizeMode(col, QHeaderView.ResizeToContents)

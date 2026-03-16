@@ -14,6 +14,7 @@ import json
 import sys
 import subprocess
 import unicodedata
+import re
 from typing import Any, Mapping
 from pathlib import Path
 import inventory_manager as im
@@ -64,6 +65,186 @@ from utils.log_buffer import get_log_buffer_text
 import logging
 
 logger = logging.getLogger(__name__)
+
+UI_SCALE_PRESETS = [
+    ("Compacto (95%)", 95),
+    ("Normal (100%)", 100),
+    ("Grande (110%)", 110),
+    ("Extra grande (120%)", 120),
+]
+
+
+def _normalize_ui_scale_percent(value: object) -> int:
+    try:
+        percent = int(value)
+    except (TypeError, ValueError):
+        return 100
+    return max(85, min(150, percent))
+
+
+def _load_ui_scale_percent() -> int:
+    if not os.path.exists(DATOS_NEGOCIO_PATH):
+        return 100
+    try:
+        with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return 100
+    if not isinstance(data, dict):
+        return 100
+    return _normalize_ui_scale_percent(data.get("ui_scale_percent", 100))
+
+
+def _scale_font_sizes_in_stylesheet(base_stylesheet: str, scale_percent: int) -> str:
+    if not base_stylesheet:
+        return ""
+    factor = max(0.5, float(scale_percent) / 100.0)
+
+    def _repl(match: re.Match) -> str:
+        size_str = match.group(1)
+        try:
+            size = float(size_str)
+        except ValueError:
+            return match.group(0)
+        scaled = max(8.0, size * factor)
+        if abs(scaled - round(scaled)) < 0.05:
+            formatted = str(int(round(scaled)))
+        else:
+            formatted = f"{scaled:.1f}".rstrip("0").rstrip(".")
+        return f"font-size: {formatted}px"
+
+    return re.sub(r"font-size\s*:\s*([0-9]+(?:\.[0-9]+)?)px", _repl, base_stylesheet)
+
+
+def _is_ui_scale_excluded(widget: object) -> bool:
+    current = widget
+    while current is not None:
+        getter = getattr(current, "property", None)
+        parent_getter = getattr(current, "parentWidget", None)
+        if callable(getter):
+            try:
+                if bool(getter("_vertex_ignore_ui_scale")):
+                    return True
+            except Exception:
+                pass
+        if callable(parent_getter):
+            current = parent_getter()
+        else:
+            break
+    return False
+
+
+def _snapshot_excluded_widgets_baseline() -> None:
+    app = QApplication.instance()
+    if app is None:
+        return
+    try:
+        widgets = app.allWidgets()
+    except Exception:
+        widgets = []
+    for widget in widgets:
+        if not _is_ui_scale_excluded(widget):
+            continue
+        try:
+            if widget.property("_vertex_excluded_font_size") is None:
+                font_size = float(widget.font().pointSizeF())
+                if font_size <= 0:
+                    font_size = float(widget.font().pointSize() or 10)
+                widget.setProperty("_vertex_excluded_font_size", font_size)
+            if widget.property("_vertex_excluded_stylesheet") is None:
+                widget.setProperty("_vertex_excluded_stylesheet", widget.styleSheet() or "")
+        except Exception:
+            continue
+
+
+def _restore_excluded_widgets_baseline() -> None:
+    app = QApplication.instance()
+    if app is None:
+        return
+    try:
+        widgets = app.allWidgets()
+    except Exception:
+        widgets = []
+    for widget in widgets:
+        if not _is_ui_scale_excluded(widget):
+            continue
+        try:
+            baseline_font = widget.property("_vertex_excluded_font_size")
+            if isinstance(baseline_font, (int, float)) and baseline_font > 0:
+                font = widget.font()
+                font.setPointSizeF(float(baseline_font))
+                widget.setFont(font)
+
+            baseline_style = widget.property("_vertex_excluded_stylesheet")
+            if isinstance(baseline_style, str) and widget.styleSheet() != baseline_style:
+                widget.setStyleSheet(baseline_style)
+        except Exception:
+            continue
+
+
+def _apply_scaled_stylesheets(scale_percent: int) -> None:
+    app = QApplication.instance()
+    if app is None:
+        return
+
+    targets = [app]
+    try:
+        targets.extend(app.allWidgets())
+    except Exception:
+        pass
+
+    for target in targets:
+        if _is_ui_scale_excluded(target):
+            continue
+        stylesheet_getter = getattr(target, "styleSheet", None)
+        stylesheet_setter = getattr(target, "setStyleSheet", None)
+        property_getter = getattr(target, "property", None)
+        property_setter = getattr(target, "setProperty", None)
+        if not callable(stylesheet_getter) or not callable(stylesheet_setter):
+            continue
+        if not callable(property_getter) or not callable(property_setter):
+            continue
+
+        current = stylesheet_getter()
+        base = property_getter("_vertex_base_stylesheet")
+        if not isinstance(base, str):
+            base = current if isinstance(current, str) else ""
+            property_setter("_vertex_base_stylesheet", base)
+
+        scaled = _scale_font_sizes_in_stylesheet(base, scale_percent)
+        if current != scaled:
+            stylesheet_setter(scaled)
+
+
+def apply_global_ui_scale(scale_percent: int | None = None) -> int:
+    app = QApplication.instance()
+    if app is None:
+        return _normalize_ui_scale_percent(scale_percent if scale_percent is not None else 100)
+
+    resolved_scale = _normalize_ui_scale_percent(
+        _load_ui_scale_percent() if scale_percent is None else scale_percent
+    )
+
+    base_point = app.property("_vertex_base_font_point_size")
+    if not isinstance(base_point, (int, float)) or base_point <= 0:
+        detected = app.font().pointSizeF()
+        base_point = float(detected if detected > 0 else 10.0)
+        app.setProperty("_vertex_base_font_point_size", base_point)
+
+    target_size = max(7.0, float(base_point) * (resolved_scale / 100.0))
+    current_scale = app.property("_vertex_active_scale_percent")
+    if isinstance(current_scale, int) and current_scale == resolved_scale:
+        return resolved_scale
+
+    _snapshot_excluded_widgets_baseline()
+
+    font = app.font()
+    font.setPointSizeF(target_size)
+    app.setFont(font)
+    _apply_scaled_stylesheets(resolved_scale)
+    _restore_excluded_widgets_baseline()
+    app.setProperty("_vertex_active_scale_percent", resolved_scale)
+    return resolved_scale
 
 
 def _nit_digits(value: object) -> str:
@@ -183,7 +364,7 @@ class StockDelegate(QStyledItemDelegate):
         painter.setPen(text_color)
         font = painter.font()
         font.setBold(True)
-        font.setPointSize(9)
+        font.setPointSize(11)
         painter.setFont(font)
         painter.drawText(badge_rect, Qt.AlignCenter, text)
         painter.restore()
@@ -601,6 +782,8 @@ class SettingsDialog(QDialog):
         self.facturacion_widget = None
         self.correo_widget = None
         self.usuarios_widget = None
+        self.envios_widget = None
+        self.ui_scale_combo = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -615,6 +798,8 @@ class SettingsDialog(QDialog):
             ("🧾 Facturación Electrónica", "facturacion"),
             ("📧 Configuración de Correo", "correo"),
             ("👥 Usuarios y Permisos", "usuarios"),
+            ("🔎 Apariencia y tamaño", "apariencia"),
+            ("📚 Historial de envíos DTE", "historial_envios"),
             ("🧰 Herramientas del Sistema", "page_tools"),
         ]
         is_admin = getattr(parent, "user", {}).get("role", "admin") == "admin" if parent else True
@@ -745,7 +930,233 @@ class SettingsDialog(QDialog):
             self.usuarios_widget = usuarios_widget
             self.content_stack.addWidget(usuarios_widget)
 
-        # Página 4: Herramientas del Sistema
+        # Página: Apariencia y tamaño
+        appearance_widget = QWidget()
+        appearance_layout = QVBoxLayout(appearance_widget)
+        appearance_layout.setContentsMargins(24, 24, 24, 24)
+        appearance_layout.setSpacing(12)
+
+        appearance_title = QLabel("Apariencia y tamaño")
+        title_font = appearance_title.font()
+        base_size = title_font.pointSize() or 12
+        title_font.setPointSize(base_size + 2)
+        title_font.setBold(True)
+        appearance_title.setFont(title_font)
+        appearance_layout.addWidget(appearance_title)
+
+        appearance_desc = QLabel(
+            "Ajusta el tamaño global de texto de la aplicación para mejorar legibilidad."
+        )
+        appearance_desc.setWordWrap(True)
+        appearance_desc.setStyleSheet("color: #475569;")
+        appearance_layout.addWidget(appearance_desc)
+
+        self.ui_scale_combo = QComboBox()
+        for label, percent in UI_SCALE_PRESETS:
+            self.ui_scale_combo.addItem(label, percent)
+        saved_scale = _load_ui_scale_percent()
+        idx = self.ui_scale_combo.findData(saved_scale)
+        if idx < 0:
+            idx = self.ui_scale_combo.findData(100)
+        if idx >= 0:
+            self.ui_scale_combo.setCurrentIndex(idx)
+
+        form = QFormLayout()
+        form.addRow("Escala global:", self.ui_scale_combo)
+        appearance_layout.addLayout(form)
+
+        scale_actions = QHBoxLayout()
+
+        btn_apply_scale = QPushButton("Guardar y aplicar")
+        btn_apply_scale.setObjectName("PrimaryActionButton")
+        btn_apply_scale.setMinimumHeight(42)
+        btn_apply_scale.clicked.connect(self._save_and_apply_ui_scale)
+
+        btn_reset_scale = QPushButton("Restablecer")
+        btn_reset_scale.setObjectName("SecondaryActionButton")
+        btn_reset_scale.setMinimumHeight(42)
+        btn_reset_scale.clicked.connect(self._reset_ui_scale)
+
+        scale_actions.addWidget(btn_apply_scale)
+        scale_actions.addWidget(btn_reset_scale)
+        scale_actions.addStretch(1)
+        appearance_layout.addLayout(scale_actions)
+        appearance_layout.addStretch(1)
+
+        self.content_stack.addWidget(appearance_widget)
+
+        # Página 4: Historial de envíos DTE
+        envios_widget = QWidget()
+        envios_layout = QVBoxLayout(envios_widget)
+        envios_layout.setContentsMargins(24, 24, 24, 24)
+        envios_layout.setSpacing(12)
+
+        envios_title = QLabel("Historial de envíos DTE")
+        title_font = envios_title.font()
+        base_size = title_font.pointSize() or 12
+        title_font.setPointSize(base_size + 2)
+        title_font.setBold(True)
+        envios_title.setFont(title_font)
+        envios_layout.addWidget(envios_title)
+
+        envios_desc = QLabel(
+            "Registros de documentos enviados a Hacienda con fecha, correlativo, código y total."
+        )
+        envios_desc.setStyleSheet("color: #475569;")
+        envios_layout.addWidget(envios_desc)
+
+        envios_controls = QHBoxLayout()
+        envios_search = QLineEdit()
+        envios_search.setPlaceholderText("Buscar por precio, fecha, numero o estado")
+        btn_envios_refresh = QPushButton("Refrescar")
+        btn_envios_ver = QPushButton("Ver respuesta")
+        envios_controls.addWidget(envios_search, 1)
+        envios_controls.addWidget(btn_envios_refresh)
+        envios_controls.addWidget(btn_envios_ver)
+        envios_layout.addLayout(envios_controls)
+
+        envios_table = QTableWidget(0, 5)
+        envios_table.setHorizontalHeaderLabels(
+            ["Fecha", "Número", "Código", "Total", "Respuesta"]
+        )
+        envios_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        envios_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        envios_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        envios_table.setWordWrap(True)
+        envios_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        envios_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        envios_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        envios_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        envios_layout.addWidget(envios_table, 1)
+
+        self.envios_widget = envios_widget
+        self._envios_table = envios_table
+        self.content_stack.addWidget(envios_widget)
+
+        def _load_envios_historial():
+            envios_table.setRowCount(0)
+            parent_db = None
+            if parent_ref and hasattr(parent_ref, "manager"):
+                parent_db = getattr(parent_ref.manager, "db", None)
+            if parent_db is None:
+                return
+            try:
+                rows = parent_db.listar_historial_envios_dte()
+            except Exception:
+                logger.exception("No se pudo cargar historial de envíos DTE")
+                return
+            self._envios_hist_rows = rows
+            _apply_envios_filter()
+
+        def _render_envios_rows(rows):
+            envios_table.setRowCount(0)
+            for row in rows:
+                current = envios_table.rowCount()
+                envios_table.insertRow(current)
+                fecha = row.get("fecha_hora") or ""
+                numero = row.get("numero_control") or ""
+                codigo = row.get("codigo_generacion") or ""
+                total = row.get("total")
+                respuesta = row.get("respuesta") or ""
+
+                fecha_text = ""
+                if fecha:
+                    try:
+                        fecha_dt = datetime.fromisoformat(str(fecha).replace("Z", "+00:00"))
+                        fecha_text = fecha_dt.strftime("%Y-%m-%d %H:%M")
+                    except Exception:
+                        fecha_text = str(fecha)
+
+                estado_text = ""
+                if isinstance(respuesta, str) and respuesta:
+                    try:
+                        parsed = json.loads(respuesta)
+                        if isinstance(parsed, dict):
+                            estado_text = str(
+                                parsed.get("estado")
+                                or parsed.get("estadoDte")
+                                or parsed.get("descripcionEstado")
+                                or ""
+                            )
+                    except Exception:
+                        estado_text = ""
+
+                def _make_item(value):
+                    return QTableWidgetItem(str(value) if value is not None else "")
+
+                envios_table.setItem(current, 0, _make_item(fecha_text))
+                envios_table.setItem(current, 1, _make_item(numero))
+                envios_table.setItem(current, 2, _make_item(codigo))
+                envios_table.setItem(current, 3, _make_item(total))
+                resumen = respuesta
+                respuesta_item = _make_item(resumen)
+                respuesta_item.setData(Qt.UserRole, respuesta)
+                if estado_text:
+                    respuesta_item.setToolTip(f"Estado: {estado_text}")
+                envios_table.setItem(current, 4, respuesta_item)
+
+        def _apply_envios_filter():
+            rows = getattr(self, "_envios_hist_rows", []) or []
+            query = envios_search.text().strip().lower()
+            if not query:
+                _render_envios_rows(rows)
+                return
+            filtered = []
+            for row in rows:
+                fecha = str(row.get("fecha_hora") or "")
+                numero = str(row.get("numero_control") or "")
+                codigo = str(row.get("codigo_generacion") or "")
+                total = str(row.get("total") or "")
+                respuesta = row.get("respuesta") or ""
+                estado = ""
+                if isinstance(respuesta, str) and respuesta:
+                    try:
+                        parsed = json.loads(respuesta)
+                        if isinstance(parsed, dict):
+                            estado = str(
+                                parsed.get("estado")
+                                or parsed.get("estadoDte")
+                                or parsed.get("descripcionEstado")
+                                or ""
+                            )
+                    except Exception:
+                        estado = ""
+                hay = " ".join([fecha, numero, codigo, total, estado]).lower()
+                if query in hay:
+                    filtered.append(row)
+            _render_envios_rows(filtered)
+
+        def _ver_respuesta_envio():
+            row_idx = envios_table.currentRow()
+            if row_idx < 0:
+                QMessageBox.information(self, "Historial de envíos", "Seleccione un registro.")
+                return
+            respuesta_item = envios_table.item(row_idx, 4)
+            if respuesta_item is None:
+                return
+            full_text = respuesta_item.data(Qt.UserRole) or respuesta_item.text()
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Respuesta de Hacienda")
+            dlg.resize(820, 520)
+            vbox = QVBoxLayout(dlg)
+            vbox.setContentsMargins(16, 16, 16, 16)
+            vbox.setSpacing(10)
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setLineWrapMode(QTextEdit.NoWrap)
+            text.setPlainText(full_text or "Sin respuesta almacenada.")
+            vbox.addWidget(text, 1)
+            btn_close = QPushButton("Cerrar")
+            btn_close.clicked.connect(dlg.accept)
+            vbox.addWidget(btn_close)
+            dlg.exec_()
+
+        btn_envios_refresh.clicked.connect(_load_envios_historial)
+        btn_envios_ver.clicked.connect(_ver_respuesta_envio)
+        envios_search.textChanged.connect(_apply_envios_filter)
+        _load_envios_historial()
+
+        # Página 5: Herramientas del Sistema
         tools_widget = QWidget()
         tools_layout = QVBoxLayout(tools_widget)
         tools_layout.setContentsMargins(24, 24, 24, 24)
@@ -814,6 +1225,36 @@ class SettingsDialog(QDialog):
         self.category_list.setCurrentRow(0)
 
         self._apply_styles()
+
+    def _save_and_apply_ui_scale(self) -> None:
+        if self.ui_scale_combo is None:
+            return
+        selected = _normalize_ui_scale_percent(self.ui_scale_combo.currentData())
+        self._persist_and_apply_ui_scale(selected, notify=True)
+
+    def _reset_ui_scale(self) -> None:
+        if self.ui_scale_combo is None:
+            return
+        idx = self.ui_scale_combo.findData(100)
+        if idx >= 0:
+            self.ui_scale_combo.setCurrentIndex(idx)
+        self._persist_and_apply_ui_scale(100, notify=True)
+
+    def _persist_and_apply_ui_scale(self, selected: int, *, notify: bool = False) -> bool:
+        selected = _normalize_ui_scale_percent(selected)
+        datos = self._load_json_file(DATOS_NEGOCIO_PATH)
+        datos["ui_scale_percent"] = selected
+        try:
+            with open(DATOS_NEGOCIO_PATH, "w", encoding="utf-8") as fh:
+                json.dump(datos, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo guardar la escala: {exc}")
+            return False
+        apply_global_ui_scale(selected)
+        if notify:
+            QMessageBox.information(self, "Apariencia", "Escala global aplicada.")
+        self.config_saved.emit("apariencia")
+        return True
 
     def _open_logs_dialog(self) -> None:
         dlg = QDialog(self)
@@ -1293,6 +1734,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Inventario Farmacia")
         self.setWindowState(self.windowState() | Qt.WindowMaximized)
         self.setMinimumSize(1024, 720)
+        apply_global_ui_scale()
         self.db = im.DB()
         self.manager = im.InventoryManager(self.db, enable_auto_backup=True)
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
@@ -1789,7 +2231,7 @@ class MainWindow(QMainWindow):
         filters_row.addWidget(lbl_vend)
         self.vendedor_combo_filtro = QComboBox()
         self.vendedor_combo_filtro.setMinimumHeight(40)
-        self.vendedor_combo_filtro.setStyleSheet("font-size: 14px;")
+        self.vendedor_combo_filtro.setStyleSheet("font-size: 16px;")
         self.vendedor_combo_filtro.addItem("Todos", None)
         for v in self.manager.get_vendedores_compra():
             self.vendedor_combo_filtro.addItem(v["nombre"], v["id"])
@@ -1804,7 +2246,7 @@ class MainWindow(QMainWindow):
         filters_row.addWidget(lbl_dist)
         self.distribuidor_combo_filtro = QComboBox()
         self.distribuidor_combo_filtro.setMinimumHeight(40)
-        self.distribuidor_combo_filtro.setStyleSheet("font-size: 14px;")
+        self.distribuidor_combo_filtro.setStyleSheet("font-size: 16px;")
         self.distribuidor_combo_filtro.addItem("Todos", None)
         for d in self.manager._Distribuidores:
             self.distribuidor_combo_filtro.addItem(d["nombre"], d["id"])
@@ -1819,7 +2261,7 @@ class MainWindow(QMainWindow):
         filters_row.addWidget(lbl_stock)
         self.stock_sort_combo = QComboBox()
         self.stock_sort_combo.setMinimumHeight(40)
-        self.stock_sort_combo.setStyleSheet("font-size: 14px;")
+        self.stock_sort_combo.setStyleSheet("font-size: 16px;")
         self.stock_sort_combo.addItems(["Ordenar por stock", "Más stock a menos", "Menos stock a más"])
         self.stock_sort_combo.currentIndexChanged.connect(self.filter_products)
         filters_row.addWidget(self.stock_sort_combo)
@@ -1842,7 +2284,7 @@ class MainWindow(QMainWindow):
         self.product_table.setAlternatingRowColors(False)
         self.product_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.product_table.setSelectionMode(QTableView.SingleSelection)
-        self.product_table.setStyleSheet(self.product_table.styleSheet() + "font-size: 14px;")
+        self.product_table.setStyleSheet(self.product_table.styleSheet() + "font-size: 16px;")
 
         self.product_table.verticalHeader().hide()
         self.product_table.verticalHeader().setDefaultSectionSize(64)
@@ -1904,19 +2346,19 @@ class MainWindow(QMainWindow):
         self.search_inventario_actual = QLineEdit()
         self.search_inventario_actual.setPlaceholderText("Buscar lote por producto o código...")
         self.search_inventario_actual.setMinimumHeight(46)
-        self.search_inventario_actual.setStyleSheet("font-size: 14px;")
+        self.search_inventario_actual.setStyleSheet("font-size: 16px;")
         self.actual_search_bar = self.search_inventario_actual  # Compatibilidad con filtros previos
         filtros_actual_layout.addWidget(self.search_inventario_actual, 2)
 
         self.actual_stock_only_cb = QCheckBox("Solo con existencia")
         self.actual_stock_only_cb.setChecked(True)
-        self.actual_stock_only_cb.setStyleSheet("font-size: 13px;")
+        self.actual_stock_only_cb.setStyleSheet("font-size: 15px;")
         filtros_actual_layout.addWidget(self.actual_stock_only_cb)
 
         self.inventario_view_combo = QComboBox()
         self.inventario_view_combo.addItems(["Lotes", "Inventario general"])
         self.inventario_view_combo.setMinimumHeight(42)
-        self.inventario_view_combo.setStyleSheet("font-size: 13px;")
+        self.inventario_view_combo.setStyleSheet("font-size: 15px;")
         filtros_actual_layout.addWidget(self.inventario_view_combo)
 
         filtros_actual_layout.addStretch(1)
@@ -1925,7 +2367,7 @@ class MainWindow(QMainWindow):
         self.btn_refresh_inventario.setObjectName("SecondaryActionButton")
         self.btn_refresh_inventario.setCursor(Qt.PointingHandCursor)
         self.btn_refresh_inventario.setMinimumHeight(42)
-        self.btn_refresh_inventario.setStyleSheet("font-size: 13px; padding: 10px 14px;")
+        self.btn_refresh_inventario.setStyleSheet("font-size: 15px; padding: 10px 14px;")
         filtros_actual_layout.addWidget(self.btn_refresh_inventario, 0, Qt.AlignRight)
 
         inventario_card_layout.addLayout(filtros_actual_layout)
@@ -1950,6 +2392,10 @@ class MainWindow(QMainWindow):
         self.inventario_actual_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.inventario_actual_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.inventario_actual_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.inventario_actual_table.setStyleSheet(
+            "QTableWidget { font-size: 16px; } "
+            "QHeaderView::section { font-size: 15px; font-weight: 700; }"
+        )
         self.inventario_actual_table.verticalHeader().setDefaultSectionSize(60)
         header = self.inventario_actual_table.horizontalHeader()
         header.setStretchLastSection(False)
@@ -1989,6 +2435,10 @@ class MainWindow(QMainWindow):
         self.inventario_general_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.inventario_general_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.inventario_general_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.inventario_general_table.setStyleSheet(
+            "QTableWidget { font-size: 16px; } "
+            "QHeaderView::section { font-size: 15px; font-weight: 700; }"
+        )
         self.inventario_general_table.verticalHeader().setDefaultSectionSize(60)
         general_header = self.inventario_general_table.horizontalHeader()
         general_header.setStretchLastSection(True)
@@ -2022,6 +2472,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.compras_tab, "Compras")
         self.tabs.addTab(inventario_actual_tab, "Inventario")
         self.tabs.addTab(self.facturacion_tab, "Facturacion")
+        self._configure_ui_scale_exclusions()
+        apply_global_ui_scale()
         inicio_index = self._find_tab_index("Inventario")
         if inicio_index != -1:
             self.tabs.setCurrentIndex(inicio_index)
@@ -2195,6 +2647,14 @@ class MainWindow(QMainWindow):
     def _on_config_saved(self, section: str | None = None) -> None:
         """Refresca datos y vistas tras guardar cualquier configuración."""
         logger.info("Refrescando datos tras guardar configuración: %s", section)
+        try:
+            self._configure_ui_scale_exclusions()
+        except Exception:
+            logger.exception("No se pudo configurar exclusiones de escala UI")
+        try:
+            apply_global_ui_scale()
+        except Exception:
+            logger.exception("No se pudo aplicar escala global de UI")
         try:
             self.manager.refresh_data()
         except Exception:
@@ -3150,6 +3610,184 @@ class MainWindow(QMainWindow):
             logger.exception("Error al generar DTE sin enviar (venta_id=%s)", venta_id, exc_info=exc)
             return False, str(exc)
 
+    def _venta_tiene_dte(self, venta_id: int) -> bool:
+        cursor = getattr(self.manager.db, "cursor", None)
+        if cursor is not None:
+            try:
+                row = cursor.execute(
+                    "SELECT 1 FROM dte_envios WHERE venta_id=? LIMIT 1",
+                    (venta_id,),
+                ).fetchone()
+                if row:
+                    return True
+            except Exception:
+                logger.exception("No se pudo consultar dte_envios para venta %s", venta_id)
+        venta = self.manager.db.get_venta_by_id(venta_id)
+        extra = venta.get("extra") if isinstance(venta, dict) else None
+        if isinstance(extra, str):
+            try:
+                extra = json.loads(extra)
+            except Exception:
+                extra = None
+        if isinstance(extra, dict):
+            for key in (
+                "codigoGeneracion",
+                "codigo_generacion",
+                "numeroControl",
+                "numero_control",
+                "dteJsonPath",
+                "jsonPath",
+                "path",
+            ):
+                if extra.get(key):
+                    return True
+        return False
+
+    def _clean_dte_extra(self, extra: dict, *, drop_paths: bool) -> dict:
+        cleaned = dict(extra or {})
+        path_keys = ("dteJsonPath", "jsonPath", "path")
+        if drop_paths:
+            for key in path_keys:
+                path = cleaned.get(key)
+                if isinstance(path, str) and path.strip():
+                    try:
+                        if os.path.isfile(path):
+                            os.remove(path)
+                    except Exception:
+                        logger.exception("No se pudo eliminar el archivo DTE: %s", path)
+        for key in (
+            "codigoGeneracion",
+            "codigo_generacion",
+            "numeroControl",
+            "numero_control",
+            "correlativo",
+            "selloRecibido",
+            "sello",
+            "selloRecepcion",
+            *path_keys,
+        ):
+            cleaned.pop(key, None)
+        return cleaned
+
+    def _reset_venta_dte_meta(self, venta_id: int, *, drop_paths: bool) -> None:
+        db = self.manager.db
+        with db.lock:
+            row = db.cursor.execute(
+                "SELECT extra FROM ventas WHERE id=?",
+                (venta_id,),
+            ).fetchone()
+        current = {}
+        if row and row[0]:
+            try:
+                current = json.loads(row[0])
+            except Exception:
+                current = {}
+        if not isinstance(current, dict):
+            current = {}
+        cleaned = self._clean_dte_extra(current, drop_paths=drop_paths)
+        with db.lock:
+            db.cursor.execute(
+                "UPDATE ventas SET extra=? WHERE id=?",
+                (json.dumps(cleaned, ensure_ascii=False), venta_id),
+            )
+            db.conn.commit()
+
+        # Limpia extra en crédito fiscal si aplica
+        with db.lock:
+            row_cf = db.cursor.execute(
+                "SELECT extra FROM ventas_credito_fiscal WHERE venta_id=?",
+                (venta_id,),
+            ).fetchone()
+        if row_cf is not None:
+            extra_cf = {}
+            if row_cf and row_cf[0]:
+                try:
+                    extra_cf = json.loads(row_cf[0])
+                except Exception:
+                    extra_cf = {}
+            if not isinstance(extra_cf, dict):
+                extra_cf = {}
+            cleaned_cf = self._clean_dte_extra(extra_cf, drop_paths=False)
+            with db.lock:
+                db.cursor.execute(
+                    "UPDATE ventas_credito_fiscal SET extra=? WHERE venta_id=?",
+                    (json.dumps(cleaned_cf, ensure_ascii=False), venta_id),
+                )
+                db.conn.commit()
+
+    def _clear_dte_for_sale(self, venta_id: int) -> None:
+        db = self.manager.db
+        with db.lock:
+            db.cursor.execute("DELETE FROM dte_envios WHERE venta_id=?", (venta_id,))
+            db.cursor.execute("DELETE FROM dte_pendientes WHERE venta_id=?", (venta_id,))
+            db.cursor.execute("DELETE FROM facturas_pdf WHERE venta_id=?", (venta_id,))
+            db.cursor.execute("DELETE FROM tickets_pdf WHERE venta_id=?", (venta_id,))
+            db.conn.commit()
+        self._reset_venta_dte_meta(venta_id, drop_paths=True)
+
+    def _update_venta_fecha_actual(self, venta_id: int) -> None:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        db = self.manager.db
+        with db.lock:
+            db.cursor.execute(
+                "UPDATE ventas SET fecha=? WHERE id=?",
+                (now_str, venta_id),
+            )
+            db.conn.commit()
+
+    def _generar_nueva_factura_electronica(self, venta_id: int) -> None:
+        venta = self.manager.db.get_venta_by_id(venta_id)
+        if not venta or int(venta.get("id", 0)) != int(venta_id):
+            QMessageBox.warning(
+                self,
+                "Nueva factura",
+                "No se encontró la venta seleccionada.",
+            )
+            return
+
+        tipo_dte = "03" if self.manager.db.get_venta_credito_fiscal(venta_id) else "01"
+        if self._venta_tiene_dte(venta_id):
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("Reemplazar DTE")
+            msg_box.setText(
+                "Existe un DTE vinculado a esta venta. Desea eliminar el DTE viejo y reemplazarlo por el nuevo?"
+            )
+            msg_box.setInformativeText(
+                "Proceder solo si esta seguro de su decision."
+            )
+            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg_box.setDefaultButton(QMessageBox.No)
+            if msg_box.exec_() != QMessageBox.Yes:
+                return
+            self._clear_dte_for_sale(venta_id)
+        else:
+            self._reset_venta_dte_meta(venta_id, drop_paths=False)
+
+        self._update_venta_fecha_actual(venta_id)
+
+        ok, msg = self._generar_dte_sin_enviar(venta_id, tipo_dte)
+        if ok:
+            try:
+                self.manager.db.update_venta_estado(venta_id, "Pendiente de Envío")
+            except Exception:
+                logger.exception("No se pudo actualizar estado de venta %s", venta_id)
+            try:
+                generate_invoice_pdf(self.manager, venta_id)
+            except Exception:
+                logger.exception("No se pudo generar PDF para venta_id=%s", venta_id)
+            else:
+                msg += "\nPDF guardado."
+            QMessageBox.information(self, "Nueva factura", msg)
+        else:
+            QMessageBox.warning(self, "Nueva factura", f"No se pudo generar el DTE: {msg}")
+
+        if hasattr(self, "sales_tab"):
+            try:
+                self.sales_tab.load_sales()
+            except Exception:
+                logger.exception("No se pudo refrescar ventas tras nueva factura")
+
     def _build_productos_lote(self) -> list[dict]:
         """Construye la lista de productos con lote desde el inventario actual."""
         self.manager.refresh_data()
@@ -3954,31 +4592,56 @@ class MainWindow(QMainWindow):
             except Exception as exc:  # pragma: no cover - solo log
                 logger.warning("No se pudo refrescar el POS: %s", exc)
 
+    def _configure_ui_scale_exclusions(self) -> None:
+        """Define widgets que deben permanecer en tamaño base sin escala global."""
+        sales = getattr(self, "sales_tab", None)
+        if sales is not None and hasattr(sales, "sales_table"):
+            sales.sales_table.setProperty("_vertex_ignore_ui_scale", True)
+
+        facturacion = getattr(self, "facturacion_tab", None)
+        if facturacion is not None:
+            facturacion.setProperty("_vertex_ignore_ui_scale", True)
+
     def _registrar_estado_dte_ui(
         self,
         venta_id: int,
         tipo_dte: str,
         estado: str,
         *,
+        sello: str | None = None,
         codigo_generacion: str | None = None,
         numero_control: str | None = None,
         ambiente: str | None = None,
     ) -> None:
         """Guarda un registro mínimo de estado DTE para reflejarlo en la pestaña de ventas."""
         try:
+            estado_norm = str(estado or "").strip().lower()
+            sent_tokens = {"enviado", "aceptado", "procesado", "recibido", "transmitido"}
+            sello_text = str(sello or "").strip()
+
+            # Evita sobreescribir el último envío real con registros UI sin sello.
+            if any(estado_norm.startswith(tok) for tok in sent_tokens) and not sello_text:
+                if venta_id:
+                    try:
+                        self.manager.db.update_venta_estado(venta_id, "Pagada")
+                    except Exception:
+                        logger.exception(
+                            "No se pudo actualizar estado de venta %s tras envío",
+                            venta_id,
+                        )
+                return
+
             self.manager.db.registrar_envio_dte(
                 venta_id=venta_id,
                 modo="ui",
                 estado=estado,
-                sello="",
+                sello=sello_text,
                 respuesta_json="",
                 codigo_lote=None,
                 codigo_generacion=codigo_generacion,
                 numero_control=numero_control,
                 ambiente=ambiente,
             )
-            estado_norm = str(estado or "").strip().lower()
-            sent_tokens = {"enviado", "aceptado", "procesado", "recibido", "transmitido"}
             if venta_id and any(estado_norm.startswith(tok) for tok in sent_tokens):
                 try:
                     self.manager.db.update_venta_estado(venta_id, "Pagada")

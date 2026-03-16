@@ -7346,6 +7346,11 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
     with open(json_path, "r", encoding="utf-8") as fh:
         raw = json.load(fh)
 
+    if isinstance(raw, Mapping):
+        inner = raw.get("dteJson")
+        if isinstance(inner, Mapping):
+            raw = dict(inner)
+
     if _is_jws_token(raw):
         if isinstance(raw, dict):
             jws_token = ".".join(
@@ -7382,6 +7387,20 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         jws_token = jws.sign_json(data)
 
     ident = payload.get("identificacion") or payload.get("identificador") or {}
+    resumen_payload = payload.get("resumen") if isinstance(payload, Mapping) else None
+    total_value = None
+    if isinstance(resumen_payload, Mapping):
+        for key in ("totalPagar", "total", "montoTotal", "monto"):
+            if key in resumen_payload:
+                try:
+                    total_value = float(resumen_payload.get(key))
+                except Exception:
+                    try:
+                        total_value = float(str(resumen_payload.get(key)).strip())
+                    except Exception:
+                        total_value = None
+                if total_value is not None:
+                    break
     meta = {
         "ambiente": ident.get("ambiente"),
         "version": ident.get("version"),
@@ -7430,6 +7449,8 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
             codigo_generacion=ident.get("codigoGeneracion"),
             numero_control=ident.get("numeroControl"),
             ambiente=ident.get("ambiente"),
+            total=total_value,
+            json_path=json_path,
         )
         raise
 
@@ -7442,6 +7463,8 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         codigo_generacion=ident.get("codigoGeneracion"),
         numero_control=ident.get("numeroControl"),
         ambiente=ident.get("ambiente"),
+        total=total_value,
+        json_path=json_path,
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
@@ -7880,6 +7903,25 @@ def _enviar_documento(
                 " Restaura el archivo original o genera un nuevo DTE."
             )
 
+    def _extract_total(payload: Mapping[str, Any] | None) -> float | None:
+        if not isinstance(payload, Mapping):
+            return None
+        resumen_payload = payload.get("resumen")
+        if not isinstance(resumen_payload, Mapping):
+            return None
+        for key in ("totalPagar", "total", "montoTotal", "monto"):
+            if key in resumen_payload:
+                try:
+                    return float(resumen_payload.get(key))
+                except Exception:
+                    try:
+                        return float(str(resumen_payload.get(key)).strip())
+                    except Exception:
+                        return None
+        return None
+
+    total_value = _extract_total(data)
+
     if jws_token:
         try:
             token_payload = _decode_jws_payload(jws_token)
@@ -7971,6 +8013,8 @@ def _enviar_documento(
             codigo_generacion=p_cod,
             numero_control=pident.get("numeroControl"),
             ambiente=ident.get("ambiente"),
+            total=total_value,
+            json_path=snapshot_path,
         )
         raise
 
@@ -7983,6 +8027,8 @@ def _enviar_documento(
         codigo_generacion=p_cod,
         numero_control=pident.get("numeroControl"),
         ambiente=ident.get("ambiente"),
+        total=total_value,
+        json_path=snapshot_path,
     )
     try:
         _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))

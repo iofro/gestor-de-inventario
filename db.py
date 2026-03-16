@@ -990,6 +990,72 @@ class DB:
             """
         )
 
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dte_envios_historial (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha_hora TEXT,
+                numero_control TEXT,
+                correlativo INTEGER,
+                codigo_generacion TEXT,
+                total REAL,
+                respuesta TEXT
+            )
+            """
+        )
+        try:
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_envios_hist_fecha ON dte_envios_historial(fecha_hora)"
+            )
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_envios_hist_codgen ON dte_envios_historial(codigo_generacion)"
+            )
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_envios_hist_numctrl ON dte_envios_historial(numero_control)"
+            )
+        except Exception:
+            pass
+
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dte_respuestas_hacienda (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                envio_id INTEGER,
+                venta_id INTEGER,
+                fecha_hora TEXT,
+                origen TEXT,
+                codigo_generacion TEXT,
+                numero_control TEXT,
+                ambiente TEXT,
+                estado_raw TEXT,
+                estado_normalizado TEXT,
+                sello TEXT,
+                descripcion_msg TEXT,
+                codigo_msg TEXT,
+                clasifica_msg TEXT,
+                observaciones_json TEXT,
+                detalle_json TEXT,
+                respuesta_json TEXT,
+                http_status INTEGER
+            )
+            """
+        )
+        try:
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mh_resp_venta ON dte_respuestas_hacienda(venta_id, id DESC)"
+            )
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mh_resp_codgen ON dte_respuestas_hacienda(codigo_generacion, id DESC)"
+            )
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mh_resp_numctrl ON dte_respuestas_hacienda(numero_control, id DESC)"
+            )
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mh_resp_fecha ON dte_respuestas_hacienda(fecha_hora DESC)"
+            )
+        except Exception:
+            pass
+
         def _migrate_dte_envios_drop_fk() -> None:
             """Recrea dte_envios si aún tiene FK a ventas (impide notas)."""
             try:
@@ -4659,6 +4725,8 @@ class DB:
         codigo_generacion=None,
         numero_control=None,
         ambiente: str | None = None,
+        total: float | None = None,
+        json_path: str | None = None,
     ):
         """Guarda un registro del estado de transmisión de un DTE.
 
@@ -4674,6 +4742,7 @@ class DB:
         self.ensure_column("dte_envios", "estado_ui", "TEXT")
         self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
         self.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
+        self._ensure_dte_respuestas_hacienda_table()
 
         try:
             self.cursor.execute(
@@ -4743,6 +4812,13 @@ class DB:
                 new_ui = "Rechazado"
             elif estado_base in {"TRANSMITIDO", "RECIBIDO", "PROCESADO"}:
                 new_ui = "Enviado"
+
+        sello_text = str(sello or "").strip()
+        if new_ui == "Enviado" and not sello_text:
+            logger.info(
+                "registrar_envio_dte: ajustando estado a Pendiente por falta de sello"
+            )
+            new_ui = "Pendiente"
 
         # Normaliza valores utilizados para consultas
         codigo_generacion_val = (codigo_generacion or "").strip().upper()
@@ -4889,6 +4965,7 @@ class DB:
                 manual_flag,
             ),
         )
+        envio_id = self.cursor.lastrowid
         logger.info(
             "registrar_envio_dte: guardado envio venta_id=%s modo=%s manual=%s ui=%s tag=%s",
             venta_id,
@@ -4897,6 +4974,36 @@ class DB:
             merged_ui,
             merged_tag,
         )
+
+        try:
+            self._registrar_respuesta_hacienda(
+                envio_id=envio_id,
+                venta_id=venta_id,
+                fecha_hora=fecha_hora,
+                origen=modo,
+                codigo_generacion=codigo_generacion_upper,
+                numero_control=numero_control_upper,
+                ambiente=ambiente_norm,
+                estado=estado,
+                sello=sello,
+                respuesta_dict=respuesta_dict,
+                respuesta_text=respuesta_text,
+            )
+        except Exception:
+            logger.exception("No se pudo registrar bitacora de respuesta MH")
+
+        try:
+            self._registrar_historial_envio_dte(
+                venta_id=venta_id,
+                fecha_hora=fecha_hora,
+                numero_control=numero_control_upper,
+                codigo_generacion=codigo_generacion_upper,
+                total=total,
+                respuesta_text=respuesta_text,
+                json_path=json_path,
+            )
+        except Exception:
+            logger.exception("No se pudo registrar historial de envios DTE")
         self.conn.commit()
 
     def consultar_envio_dte(self, venta_id):
@@ -4912,6 +5019,176 @@ class DB:
             return json.loads(row[0])
         except Exception:
             return {}
+
+    def get_latest_hacienda_response(
+        self,
+        *,
+        venta_id: int | None = None,
+        codigo_generacion: str | None = None,
+        numero_control: str | None = None,
+    ) -> dict | None:
+        """Devuelve la última respuesta de Hacienda normalizada para un DTE."""
+
+        try:
+            self._ensure_dte_respuestas_hacienda_table()
+        except Exception:
+            return None
+
+        conditions = []
+        params: list[Any] = []
+        if venta_id is not None:
+            conditions.append("venta_id=?")
+            params.append(venta_id)
+        codigo_norm = str(codigo_generacion or "").strip().upper()
+        if codigo_norm:
+            conditions.append("UPPER(codigo_generacion)=?")
+            params.append(codigo_norm)
+        numero_norm = str(numero_control or "").strip().upper()
+        if numero_norm:
+            conditions.append("UPPER(numero_control)=?")
+            params.append(numero_norm)
+
+        row = None
+        if conditions:
+            try:
+                row = self.cursor.execute(
+                    "SELECT * FROM dte_respuestas_hacienda "
+                    f"WHERE {' OR '.join(conditions)} ORDER BY id DESC LIMIT 1",
+                    tuple(params),
+                ).fetchone()
+            except Exception:
+                row = None
+
+        if row:
+            try:
+                result = dict(row)
+            except Exception:
+                result = None
+            if isinstance(result, dict):
+                return result
+
+        # Fallback para instalaciones con datos previos: reconstruye desde dte_envios.
+        conditions_env = []
+        params_env: list[Any] = []
+        if venta_id is not None:
+            conditions_env.append("venta_id=?")
+            params_env.append(venta_id)
+        if codigo_norm:
+            conditions_env.append("UPPER(codigo_generacion)=?")
+            params_env.append(codigo_norm)
+        if numero_norm:
+            conditions_env.append("UPPER(numero_control)=?")
+            params_env.append(numero_norm)
+        if not conditions_env:
+            return None
+
+        try:
+            env_row = self.cursor.execute(
+                "SELECT id, venta_id, fecha_hora, modo, estado, sello, respuesta, codigo_generacion, numero_control, ambiente "
+                "FROM dte_envios "
+                f"WHERE {' OR '.join(conditions_env)} ORDER BY id DESC LIMIT 1",
+                tuple(params_env),
+            ).fetchone()
+        except Exception:
+            env_row = None
+        if not env_row:
+            return None
+
+        try:
+            env = dict(env_row)
+        except Exception:
+            return None
+
+        payload = None
+        raw_text = str(env.get("respuesta") or "").strip()
+        if raw_text:
+            try:
+                parsed = json.loads(raw_text)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, Mapping):
+                payload = parsed
+
+        detalle = payload.get("detalle") if isinstance(payload, Mapping) else None
+
+        def _pick(*values):
+            for value in values:
+                if isinstance(value, str):
+                    t = value.strip()
+                    if t:
+                        return t
+                elif value not in (None, ""):
+                    return str(value)
+            return None
+
+        estado_raw = _pick(
+            (payload or {}).get("estado") if isinstance(payload, Mapping) else None,
+            (payload or {}).get("estadoDte") if isinstance(payload, Mapping) else None,
+            (payload or {}).get("estadoEvento") if isinstance(payload, Mapping) else None,
+            (payload or {}).get("descripcionEstado") if isinstance(payload, Mapping) else None,
+            detalle.get("estado") if isinstance(detalle, Mapping) else None,
+            detalle.get("estadoDte") if isinstance(detalle, Mapping) else None,
+            detalle.get("estadoEvento") if isinstance(detalle, Mapping) else None,
+            detalle.get("descripcionEstado") if isinstance(detalle, Mapping) else None,
+            env.get("estado"),
+        )
+        estado_norm = "pendiente"
+        lowered = str(estado_raw or "").strip().lower()
+        if any(tok in lowered for tok in ("rechaz", "invalid")):
+            estado_norm = "rechazado"
+        elif "acept" in lowered:
+            estado_norm = "aceptado"
+        elif any(tok in lowered for tok in ("proces", "recib", "transmit", "envi")):
+            estado_norm = "enviado"
+        elif "anula" in lowered:
+            estado_norm = "anulado"
+
+        sello = _pick(
+            (payload or {}).get("sello") if isinstance(payload, Mapping) else None,
+            (payload or {}).get("selloRecibido") if isinstance(payload, Mapping) else None,
+            (payload or {}).get("selloRecepcion") if isinstance(payload, Mapping) else None,
+            detalle.get("sello") if isinstance(detalle, Mapping) else None,
+            detalle.get("selloRecibido") if isinstance(detalle, Mapping) else None,
+            detalle.get("selloRecepcion") if isinstance(detalle, Mapping) else None,
+            env.get("sello"),
+        )
+
+        return {
+            "envio_id": env.get("id"),
+            "venta_id": env.get("venta_id"),
+            "fecha_hora": env.get("fecha_hora"),
+            "origen": env.get("modo"),
+            "codigo_generacion": env.get("codigo_generacion"),
+            "numero_control": env.get("numero_control"),
+            "ambiente": env.get("ambiente"),
+            "estado_raw": estado_raw,
+            "estado_normalizado": estado_norm,
+            "sello": sello,
+            "descripcion_msg": _pick(
+                (payload or {}).get("descripcionMsg") if isinstance(payload, Mapping) else None,
+                detalle.get("descripcionMsg") if isinstance(detalle, Mapping) else None,
+            ),
+            "codigo_msg": _pick(
+                (payload or {}).get("codigoMsg") if isinstance(payload, Mapping) else None,
+                detalle.get("codigoMsg") if isinstance(detalle, Mapping) else None,
+            ),
+            "clasifica_msg": _pick(
+                (payload or {}).get("clasificaMsg") if isinstance(payload, Mapping) else None,
+                detalle.get("clasificaMsg") if isinstance(detalle, Mapping) else None,
+            ),
+            "observaciones_json": (
+                json.dumps((payload or {}).get("observaciones"), ensure_ascii=False)
+                if isinstance(payload, Mapping) and (payload.get("observaciones") not in (None, ""))
+                else (
+                    json.dumps(detalle.get("observaciones"), ensure_ascii=False)
+                    if isinstance(detalle, Mapping) and (detalle.get("observaciones") not in (None, ""))
+                    else None
+                )
+            ),
+            "detalle_json": json.dumps(detalle, ensure_ascii=False) if detalle not in (None, "") else None,
+            "respuesta_json": raw_text or None,
+            "http_status": ((payload or {}).get("http_status") if isinstance(payload, Mapping) else None),
+        }
 
     def update_envio_estado_ui(
         self,
@@ -5241,6 +5518,286 @@ class DB:
 
         fecha_hora = row["fecha_hora"] if isinstance(row, sqlite3.Row) else row[0]
         return fecha_ddmmaaaa(fecha_hora)
+
+    def _ensure_dte_respuestas_hacienda_table(self) -> None:
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dte_respuestas_hacienda (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                envio_id INTEGER,
+                venta_id INTEGER,
+                fecha_hora TEXT,
+                origen TEXT,
+                codigo_generacion TEXT,
+                numero_control TEXT,
+                ambiente TEXT,
+                estado_raw TEXT,
+                estado_normalizado TEXT,
+                sello TEXT,
+                descripcion_msg TEXT,
+                codigo_msg TEXT,
+                clasifica_msg TEXT,
+                observaciones_json TEXT,
+                detalle_json TEXT,
+                respuesta_json TEXT,
+                http_status INTEGER
+            )
+            """
+        )
+
+    def _registrar_respuesta_hacienda(
+        self,
+        *,
+        envio_id: int | None,
+        venta_id,
+        fecha_hora: str,
+        origen,
+        codigo_generacion: str | None,
+        numero_control: str | None,
+        ambiente: str | None,
+        estado,
+        sello,
+        respuesta_dict: Mapping[str, Any] | None,
+        respuesta_text: str,
+    ) -> None:
+        respuesta_payload: Mapping[str, Any] | None = respuesta_dict
+        respuesta_json = str(respuesta_text or "").strip()
+
+        if respuesta_payload is None and respuesta_json:
+            try:
+                parsed = json.loads(respuesta_json)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, Mapping):
+                respuesta_payload = parsed
+
+        # No registra entradas vacías de UI sin respuesta de MH.
+        if respuesta_payload is None and not respuesta_json:
+            return
+
+        detalle_payload = None
+        if isinstance(respuesta_payload, Mapping):
+            detalle_payload = respuesta_payload.get("detalle")
+
+        def _pick(*values):
+            for value in values:
+                if isinstance(value, str):
+                    text = value.strip()
+                    if text:
+                        return text
+                elif value not in (None, ""):
+                    return str(value)
+            return None
+
+        estado_raw = _pick(
+            (respuesta_payload or {}).get("estado") if isinstance(respuesta_payload, Mapping) else None,
+            (respuesta_payload or {}).get("estadoDte") if isinstance(respuesta_payload, Mapping) else None,
+            (respuesta_payload or {}).get("estadoEvento") if isinstance(respuesta_payload, Mapping) else None,
+            (respuesta_payload or {}).get("descripcionEstado") if isinstance(respuesta_payload, Mapping) else None,
+            detalle_payload.get("estado") if isinstance(detalle_payload, Mapping) else None,
+            detalle_payload.get("estadoDte") if isinstance(detalle_payload, Mapping) else None,
+            detalle_payload.get("estadoEvento") if isinstance(detalle_payload, Mapping) else None,
+            detalle_payload.get("descripcionEstado") if isinstance(detalle_payload, Mapping) else None,
+            estado,
+        )
+
+        estado_norm = "pendiente"
+        estado_lower = (estado_raw or "").strip().lower()
+        if any(token in estado_lower for token in ("rechaz", "invalid")):
+            estado_norm = "rechazado"
+        elif "acept" in estado_lower:
+            estado_norm = "aceptado"
+        elif any(token in estado_lower for token in ("proces", "recib", "transmit", "envi")):
+            estado_norm = "enviado"
+        elif any(token in estado_lower for token in ("anula",)):
+            estado_norm = "anulado"
+
+        sello_value = _pick(
+            (respuesta_payload or {}).get("sello") if isinstance(respuesta_payload, Mapping) else None,
+            (respuesta_payload or {}).get("selloRecibido") if isinstance(respuesta_payload, Mapping) else None,
+            (respuesta_payload or {}).get("selloRecepcion") if isinstance(respuesta_payload, Mapping) else None,
+            detalle_payload.get("sello") if isinstance(detalle_payload, Mapping) else None,
+            detalle_payload.get("selloRecibido") if isinstance(detalle_payload, Mapping) else None,
+            detalle_payload.get("selloRecepcion") if isinstance(detalle_payload, Mapping) else None,
+            sello,
+        )
+
+        descripcion_msg = _pick(
+            (respuesta_payload or {}).get("descripcionMsg") if isinstance(respuesta_payload, Mapping) else None,
+            detalle_payload.get("descripcionMsg") if isinstance(detalle_payload, Mapping) else None,
+        )
+        codigo_msg = _pick(
+            (respuesta_payload or {}).get("codigoMsg") if isinstance(respuesta_payload, Mapping) else None,
+            detalle_payload.get("codigoMsg") if isinstance(detalle_payload, Mapping) else None,
+        )
+        clasifica_msg = _pick(
+            (respuesta_payload or {}).get("clasificaMsg") if isinstance(respuesta_payload, Mapping) else None,
+            detalle_payload.get("clasificaMsg") if isinstance(detalle_payload, Mapping) else None,
+        )
+
+        observaciones = None
+        if isinstance(respuesta_payload, Mapping):
+            observaciones = respuesta_payload.get("observaciones")
+        if observaciones in (None, "") and isinstance(detalle_payload, Mapping):
+            observaciones = detalle_payload.get("observaciones")
+
+        observaciones_json = None
+        if observaciones not in (None, ""):
+            try:
+                observaciones_json = json.dumps(observaciones, ensure_ascii=False)
+            except Exception:
+                observaciones_json = str(observaciones)
+
+        detalle_json = None
+        if detalle_payload not in (None, ""):
+            try:
+                detalle_json = json.dumps(detalle_payload, ensure_ascii=False)
+            except Exception:
+                detalle_json = str(detalle_payload)
+
+        http_status = None
+        if isinstance(respuesta_payload, Mapping):
+            status_raw = respuesta_payload.get("http_status")
+            if status_raw is not None:
+                try:
+                    http_status = int(status_raw)
+                except Exception:
+                    http_status = None
+
+        self.cursor.execute(
+            """
+            INSERT INTO dte_respuestas_hacienda (
+                envio_id, venta_id, fecha_hora, origen,
+                codigo_generacion, numero_control, ambiente,
+                estado_raw, estado_normalizado, sello,
+                descripcion_msg, codigo_msg, clasifica_msg,
+                observaciones_json, detalle_json, respuesta_json, http_status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                envio_id,
+                venta_id,
+                fecha_hora,
+                str(origen or "").strip() or None,
+                codigo_generacion,
+                numero_control,
+                ambiente,
+                estado_raw,
+                estado_norm,
+                sello_value,
+                descripcion_msg,
+                codigo_msg,
+                clasifica_msg,
+                observaciones_json,
+                detalle_json,
+                respuesta_json or None,
+                http_status,
+            ),
+        )
+
+    def _registrar_historial_envio_dte(
+        self,
+        *,
+        venta_id,
+        fecha_hora: str,
+        numero_control: str | None,
+        codigo_generacion: str | None,
+        total: float | None,
+        respuesta_text: str,
+        json_path: str | None = None,
+    ) -> None:
+        def _parse_correlativo(value: str | None) -> int | None:
+            if not value:
+                return None
+            match = re.search(r"-(\d{15})$", str(value).strip())
+            if not match:
+                return None
+            try:
+                return int(match.group(1))
+            except Exception:
+                return None
+
+        def _coerce_total(value) -> float | None:
+            if value in (None, ""):
+                return None
+            try:
+                return float(value)
+            except Exception:
+                try:
+                    return float(str(value).strip())
+                except Exception:
+                    return None
+
+        def _extract_total_from_json(path: str) -> float | None:
+            if not path or not os.path.exists(path):
+                return None
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except Exception:
+                return None
+            data = payload.get("dteJson") if isinstance(payload, dict) else None
+            if not isinstance(data, dict):
+                data = payload if isinstance(payload, dict) else None
+            if not isinstance(data, dict):
+                return None
+            resumen = data.get("resumen") if isinstance(data.get("resumen"), dict) else {}
+            for key in (
+                "totalPagar",
+                "total",
+                "montoTotal",
+                "monto",
+            ):
+                if key in resumen:
+                    return _coerce_total(resumen.get(key))
+            return None
+
+        if total is None and venta_id is not None:
+            try:
+                venta = self.get_venta_by_id(venta_id)
+                if venta and "total" in venta:
+                    total = _coerce_total(venta.get("total"))
+            except Exception:
+                total = None
+        if total is None and json_path:
+            total = _extract_total_from_json(json_path)
+
+        correlativo = _parse_correlativo(numero_control)
+        self.cursor.execute(
+            """
+            INSERT INTO dte_envios_historial (
+                fecha_hora,
+                numero_control,
+                correlativo,
+                codigo_generacion,
+                total,
+                respuesta
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                fecha_hora,
+                numero_control,
+                correlativo,
+                codigo_generacion,
+                total,
+                respuesta_text,
+            ),
+        )
+        self.conn.commit()
+
+    def listar_historial_envios_dte(self, limite: int | None = None) -> list[dict]:
+        query = (
+            "SELECT fecha_hora, numero_control, correlativo, codigo_generacion, total, respuesta "
+            "FROM dte_envios_historial ORDER BY fecha_hora DESC"
+        )
+        params = []
+        if isinstance(limite, int) and limite > 0:
+            query += " LIMIT ?"
+            params.append(int(limite))
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
 
     def listar_dtes(self, fecha_inicio=None, fecha_fin=None, estado=None):
         """Lista registros de ``dte_envios`` filtrando por fecha y estado."""

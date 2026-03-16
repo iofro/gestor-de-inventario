@@ -26,8 +26,9 @@ from PyQt5.QtWidgets import (
     QTabWidget,
     QGridLayout,
     QStyledItemDelegate,
+    QMenu,
 )
-from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker, QRectF
+from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker, QRectF, QTimer
 from PyQt5.QtGui import QPixmap, QColor, QPainter, QPainterPath, QPen
 from dialogs import RegisterCreditoFiscalDialog, RegisterSaleDialog
 from datetime import datetime, date, timedelta
@@ -120,6 +121,7 @@ class DteStatusDelegate(QStyledItemDelegate):
         "falta": ("#FEE2E2", "#B91C1C"),     # rojo suave
         "guardado": ("#DBEAFE", "#1D4ED8"),  # azul suave
         "enviado": ("#DCFCE7", "#15803D"),   # verde suave
+        "rechazado": ("#FEE2E2", "#B91C1C"), # rojo suave
     }
 
     def paint(self, painter, option, index):
@@ -274,6 +276,12 @@ class SalesTab(QWidget):
         self.email_thread = None
         self._email_loading_dialog = None
         self._stats_dirty = True
+        self._sales_ui_state = self._load_sales_ui_state()
+        self._pos_base_font_size = None
+        self._current_pos_font_size = None
+        self._splitter_save_timer = QTimer(self)
+        self._splitter_save_timer.setSingleShot(True)
+        self._splitter_save_timer.timeout.connect(self._persist_sales_splitter_sizes)
         self._setup_ui()
         self._load_email_config()
         if check_smtp:
@@ -290,6 +298,12 @@ class SalesTab(QWidget):
         main_layout = QHBoxLayout(main_tab)
         main_layout.setContentsMargins(24, 24, 24, 24)
         main_layout.setSpacing(20)
+
+        # Splitter horizontal para redimensionar listado y panel de registro.
+        self.sales_splitter = QSplitter(Qt.Horizontal)
+        self.sales_splitter.setChildrenCollapsible(False)
+        self.sales_splitter.setHandleWidth(8)
+        self.sales_splitter.splitterMoved.connect(self._on_sales_splitter_moved)
 
         # Panel izquierdo: Historial
         left_card = QFrame()
@@ -308,6 +322,10 @@ class SalesTab(QWidget):
         self.refresh_sales_btn.setCursor(Qt.PointingHandCursor)
         self.refresh_sales_btn.clicked.connect(self._refresh_sales_data)
         title_row.addWidget(self.refresh_sales_btn)
+        self.reset_panels_btn = QPushButton("Restablecer paneles")
+        self.reset_panels_btn.setCursor(Qt.PointingHandCursor)
+        self.reset_panels_btn.clicked.connect(self._reset_sales_splitter_sizes)
+        title_row.addWidget(self.reset_panels_btn)
         left_layout.addLayout(title_row)
 
         filters_layout = QVBoxLayout()
@@ -391,6 +409,10 @@ class SalesTab(QWidget):
         self.btn_guardar_dte_manual.setMinimumHeight(34)
         self.btn_guardar_dte_manual.clicked.connect(self._guardar_dte_manual)
         actions_row.addWidget(self.btn_guardar_dte_manual)
+        self.btn_regenerar_factura = QPushButton("Generar nueva factura electronica")
+        self.btn_regenerar_factura.setMinimumHeight(34)
+        self.btn_regenerar_factura.clicked.connect(self._generar_nueva_factura_electronica)
+        actions_row.addWidget(self.btn_regenerar_factura)
         self.btn_editar_dte = QPushButton("Editar DTE rechazado")
         self.btn_editar_dte.setMinimumHeight(34)
         self.btn_editar_dte.clicked.connect(self._editar_dte_rechazado)
@@ -402,7 +424,8 @@ class SalesTab(QWidget):
         actions_row.addWidget(self.btn_eliminar_venta)
         left_layout.addLayout(actions_row)
 
-        main_layout.addWidget(left_card, 3)
+        left_card.setMinimumWidth(560)
+        self.sales_splitter.addWidget(left_card)
 
         # Panel derecho: Accesos a flujo de venta existente
         self.pos_card = QFrame()
@@ -457,7 +480,15 @@ class SalesTab(QWidget):
         ):
             w.setVisible(False)
 
-        main_layout.addWidget(self.pos_card, 2)
+        self.pos_card.setMinimumWidth(420)
+        base_point = self.pos_card.font().pointSize()
+        self._pos_base_font_size = int(base_point if base_point > 0 else 10)
+        self._current_pos_font_size = None
+        self.sales_splitter.addWidget(self.pos_card)
+        self.sales_splitter.setStretchFactor(0, 3)
+        self.sales_splitter.setStretchFactor(1, 2)
+        main_layout.addWidget(self.sales_splitter)
+        QTimer.singleShot(0, self._initialize_sales_splitter_sizes)
 
         self.sales_tabs.addTab(main_tab, "Listado")
 
@@ -465,6 +496,91 @@ class SalesTab(QWidget):
         self._setup_stats_tab()
         self.sales_tabs.addTab(self.stats_tab, "Estadística")
         self.sales_tabs.currentChanged.connect(self._on_inner_tab_changed)
+
+    def _initialize_sales_splitter_sizes(self, *, force_default: bool = False) -> None:
+        splitter = getattr(self, "sales_splitter", None)
+        if splitter is None:
+            return
+        total = splitter.width()
+        if total <= 0:
+            return
+
+        if not force_default:
+            saved_sizes = self._sales_ui_state.get("splitter_sizes")
+            if isinstance(saved_sizes, list) and len(saved_sizes) == 2:
+                try:
+                    left_saved = int(saved_sizes[0])
+                    right_saved = int(saved_sizes[1])
+                except (TypeError, ValueError):
+                    left_saved = 0
+                    right_saved = 0
+                if left_saved > 0 and right_saved > 0:
+                    left_min = splitter.widget(0).minimumWidth() if splitter.count() > 0 else 0
+                    right_min = splitter.widget(1).minimumWidth() if splitter.count() > 1 else 0
+                    left_size = max(left_saved, left_min)
+                    right_size = max(right_saved, right_min)
+                    splitter.setSizes([left_size, right_size])
+                    self._apply_pos_responsive_typography()
+                    return
+
+        left_target = int(total * 0.60)
+        right_target = total - left_target
+        left_min = splitter.widget(0).minimumWidth() if splitter.count() > 0 else 0
+        right_min = splitter.widget(1).minimumWidth() if splitter.count() > 1 else 0
+
+        left_size = max(left_target, left_min)
+        right_size = max(right_target, right_min)
+        splitter.setSizes([left_size, right_size])
+        self._apply_pos_responsive_typography()
+
+    def _on_sales_splitter_moved(self, _pos: int, _index: int) -> None:
+        self._apply_pos_responsive_typography()
+        if self._splitter_save_timer.isActive():
+            self._splitter_save_timer.stop()
+        self._splitter_save_timer.start(250)
+
+    def _reset_sales_splitter_sizes(self) -> None:
+        self._initialize_sales_splitter_sizes(force_default=True)
+        self._persist_sales_splitter_sizes()
+
+    def _apply_pos_responsive_typography(self) -> None:
+        splitter = getattr(self, "sales_splitter", None)
+        pos_card = getattr(self, "pos_card", None)
+        if splitter is None or pos_card is None:
+            return
+
+        sizes = splitter.sizes()
+        if len(sizes) != 2:
+            return
+
+        right_width = int(sizes[1])
+        base_size = self._pos_base_font_size
+        if not isinstance(base_size, int) or base_size <= 0:
+            detected = pos_card.font().pointSize()
+            base_size = int(detected if detected > 0 else 10)
+            self._pos_base_font_size = base_size
+
+        delta = 0
+        if right_width >= 620:
+            delta = 1
+        if right_width >= 760:
+            delta = 2
+
+        target_size = max(9, min(14, base_size + delta))
+        if self._current_pos_font_size == target_size:
+            return
+
+        font = pos_card.font()
+        font.setPointSize(target_size)
+        pos_card.setFont(font)
+        self._current_pos_font_size = target_size
+
+        # Acompana el crecimiento de fuente sin desbalancear el layout.
+        btn_height = 46 + (delta * 4)
+        if hasattr(self, "btn_cf"):
+            self.btn_cf.setMinimumHeight(btn_height)
+        if hasattr(self, "btn_cfiscal"):
+            self.btn_cfiscal.setMinimumHeight(btn_height)
 
     def _setup_pos_card(self):
         if not hasattr(self, "pos_content_layout"):
@@ -482,13 +598,13 @@ class SalesTab(QWidget):
         self.pos_scroll = QScrollArea()
         self.pos_scroll.setWidgetResizable(True)
         self.pos_scroll.setFrameShape(QFrame.NoFrame)
-        self.pos_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.pos_scroll.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        self.pos_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.pos_scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.pos_scroll.setContextMenuPolicy(Qt.CustomContextMenu)
         self.pos_scroll.customContextMenuRequested.connect(self._show_pos_context_menu)
 
         self.pos_stack = QStackedWidget()
-        self.pos_stack.setMaximumWidth(585)
+        self.pos_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.pos_scroll.setWidget(self.pos_stack)
         self.pos_content_layout.addWidget(self.pos_scroll)
 
@@ -514,7 +630,7 @@ class SalesTab(QWidget):
             refresh_callback=self._build_productos_lote,
         )
         self.widget_cf.setWindowFlags(Qt.Widget)
-        self.widget_cf.setMaximumWidth(585)
+        self.widget_cf.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.widget_cf.venta_validada.connect(self._on_cf_venta_validada)
         self._connect_pos_cancel(self.widget_cf)
         self.pos_stack.addWidget(self.widget_cf)
@@ -529,7 +645,7 @@ class SalesTab(QWidget):
         )
         self.widget_cfiscal.set_productos_data(productos_lote)
         self.widget_cfiscal.setWindowFlags(Qt.Widget)
-        self.widget_cfiscal.setMaximumWidth(585)
+        self.widget_cfiscal.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.widget_cfiscal.venta_validada.connect(self._on_cfiscal_venta_validada)
         self._connect_pos_cancel(self.widget_cfiscal)
         self.pos_stack.addWidget(self.widget_cfiscal)
@@ -1361,6 +1477,33 @@ class SalesTab(QWidget):
             logger.exception("No se pudo abrir el editor de DTE para venta %s", venta_id)
             QMessageBox.critical(self, "Editar DTE", f"No se pudo abrir el editor: {exc}")
 
+    def _generar_nueva_factura_electronica(self):
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Nueva factura", "Seleccione una venta del historial.")
+            return
+        row = self.sales_table.currentRow()
+        venta_id = self._venta_id_from_row(row)
+        if venta_id is None:
+            QMessageBox.warning(self, "Nueva factura", "No se pudo identificar la venta seleccionada.")
+            return
+        main_window = self.main_window or self.window() or self.parent()
+        if main_window is None or not hasattr(main_window, "_generar_nueva_factura_electronica"):
+            QMessageBox.warning(
+                self,
+                "Nueva factura",
+                "No se pudo ejecutar el flujo en esta ventana.",
+            )
+            return
+        try:
+            main_window._generar_nueva_factura_electronica(int(venta_id))
+        except Exception as exc:
+            logger.exception("No se pudo generar nueva factura para venta %s", venta_id)
+            QMessageBox.critical(
+                self,
+                "Nueva factura",
+                f"No se pudo generar la nueva factura:\n{exc}",
+            )
+
     def load_sales(self):
         main_window = self.main_window or self.window() or self.parent()
         if main_window is not None and hasattr(main_window, "_sync_ventas_estado_from_envios"):
@@ -1458,17 +1601,20 @@ class SalesTab(QWidget):
             return None
 
     def _dte_status_for_sale(self, venta: dict) -> str:
-        """Devuelve estado DTE normalizado: Falta / Guardado / Enviado."""
+        """Devuelve estado DTE normalizado: Falta / Guardado / Enviado / Rechazado."""
         estado_venta = str(venta.get("estado") or "").strip()
         venta_id = venta.get("id")
         estado_ui = None
         estado_base = None
         tag = None
+        sello = None
+        respuesta = None
+        row_id = None
         cursor = getattr(self.manager.db, "cursor", None)
         if cursor is not None:
             try:
                 row = cursor.execute(
-                    "SELECT estado_ui, estado, estado_ui_tag FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                    "SELECT id, estado_ui, estado, estado_ui_tag, sello, respuesta FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
                     (venta_id,),
                 ).fetchone()
             except Exception:
@@ -1499,7 +1645,7 @@ class SalesTab(QWidget):
                 if clauses:
                     try:
                         query = (
-                            "SELECT estado_ui, estado, estado_ui_tag FROM dte_envios "
+                            "SELECT id, estado_ui, estado, estado_ui_tag, sello, respuesta FROM dte_envios "
                             f"WHERE {' OR '.join(clauses)} ORDER BY id DESC LIMIT 1"
                         )
                         row = cursor.execute(query, params).fetchone()
@@ -1507,22 +1653,117 @@ class SalesTab(QWidget):
                         row = None
         if row:
             try:
-                estado_ui = row["estado_ui"] if hasattr(row, "__getitem__") else row[0]
-                estado_base = row["estado"] if hasattr(row, "__getitem__") else row[1]
-                tag = row["estado_ui_tag"] if hasattr(row, "__getitem__") else row[2]
+                row_id = row["id"] if hasattr(row, "__getitem__") else row[0]
+                estado_ui = row["estado_ui"] if hasattr(row, "__getitem__") else row[1]
+                estado_base = row["estado"] if hasattr(row, "__getitem__") else row[2]
+                tag = row["estado_ui_tag"] if hasattr(row, "__getitem__") else row[3]
+                sello = row["sello"] if hasattr(row, "__getitem__") else row[4]
+                respuesta = row["respuesta"] if hasattr(row, "__getitem__") else row[5]
             except Exception:
                 pass
 
         def norm(val):
             return str(val or "").strip().lower()
 
+        def parse_resp(raw):
+            if not raw:
+                return "", ""
+            if isinstance(raw, str):
+                text = raw.strip()
+                if not text:
+                    return "", ""
+                try:
+                    payload = json.loads(text)
+                except Exception:
+                    return "", ""
+            elif isinstance(raw, dict):
+                payload = raw
+            else:
+                return "", ""
+
+            detalle = payload.get("detalle")
+            estado_resp = (
+                payload.get("estado")
+                or payload.get("estadoDte")
+                or payload.get("estadoEvento")
+                or payload.get("descripcionEstado")
+            )
+            if not estado_resp and isinstance(detalle, dict):
+                estado_resp = (
+                    detalle.get("estado")
+                    or detalle.get("estadoDte")
+                    or detalle.get("estadoEvento")
+                    or detalle.get("descripcionEstado")
+                )
+            sello_resp = (
+                payload.get("sello")
+                or payload.get("selloRecibido")
+                or payload.get("selloRecepcion")
+            )
+            if not sello_resp and isinstance(detalle, dict):
+                sello_resp = (
+                    detalle.get("sello")
+                    or detalle.get("selloRecibido")
+                    or detalle.get("selloRecepcion")
+                )
+            return norm(estado_resp), str(sello_resp or "").strip()
+
         ui = norm(estado_ui)
         base = norm(estado_base)
         tag = norm(tag)
+        resp_state, resp_sello = parse_resp(respuesta)
         sent_states = {"enviado", "aceptado", "procesado", "recibido", "transmitido"}
+        rejected_states = {"rechazado"}
         pending_states = {"pendiente"}
-        if ui in sent_states or tag in sent_states or base in sent_states:
+        has_sello = bool(str(sello or "").strip() or resp_sello)
+        if (ui in sent_states or tag in sent_states or base in sent_states or resp_state in sent_states) and has_sello:
             return "Enviado"
+        if ui in rejected_states or tag in rejected_states or base in rejected_states or resp_state in rejected_states:
+            return "Rechazado"
+        if ui in sent_states or tag in sent_states or base in sent_states or resp_state in sent_states:
+            # Conciliacion al recargar: buscar en historial un acuse con sello o rechazo.
+            if cursor is not None and venta_id is not None:
+                try:
+                    hist = cursor.execute(
+                        "SELECT id, estado_ui, estado, estado_ui_tag, sello, respuesta "
+                        "FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 8",
+                        (venta_id,),
+                    ).fetchall()
+                except Exception:
+                    hist = []
+                found_rejected = False
+                for h in hist:
+                    try:
+                        hid = h["id"] if hasattr(h, "__getitem__") else h[0]
+                        if row_id is not None and hid == row_id:
+                            continue
+                        h_ui = norm(h["estado_ui"] if hasattr(h, "__getitem__") else h[1])
+                        h_base = norm(h["estado"] if hasattr(h, "__getitem__") else h[2])
+                        h_tag = norm(h["estado_ui_tag"] if hasattr(h, "__getitem__") else h[3])
+                        h_sello = str(h["sello"] if hasattr(h, "__getitem__") else h[4] or "").strip()
+                        h_resp_state, h_resp_sello = parse_resp(
+                            h["respuesta"] if hasattr(h, "__getitem__") else h[5]
+                        )
+                    except Exception:
+                        continue
+
+                    if (
+                        h_ui in sent_states
+                        or h_base in sent_states
+                        or h_tag in sent_states
+                        or h_resp_state in sent_states
+                    ) and (h_sello or h_resp_sello):
+                        return "Enviado"
+                    if (
+                        h_ui in rejected_states
+                        or h_base in rejected_states
+                        or h_tag in rejected_states
+                        or h_resp_state in rejected_states
+                    ):
+                        found_rejected = True
+                if found_rejected:
+                    return "Rechazado"
+            return "Guardado"
         if ui in pending_states or base in pending_states:
             return "Guardado"
         if estado_venta.lower() == "pendiente de envío":
@@ -1944,6 +2185,50 @@ class SalesTab(QWidget):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _load_sales_ui_state(self) -> dict:
+        path = DATOS_NEGOCIO_PATH
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if not isinstance(data, dict):
+                return {}
+            state = data.get("sales_tab_ui")
+            if isinstance(state, dict):
+                return state
+        except Exception:
+            return {}
+        return {}
+
+    def _persist_sales_splitter_sizes(self) -> None:
+        splitter = getattr(self, "sales_splitter", None)
+        if splitter is None:
+            return
+        sizes = splitter.sizes()
+        if len(sizes) != 2:
+            return
+
+        self._sales_ui_state["splitter_sizes"] = [int(sizes[0]), int(sizes[1])]
+
+        path = DATOS_NEGOCIO_PATH
+        data = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    loaded = json.load(fh)
+                if isinstance(loaded, dict):
+                    data = loaded
+            except Exception:
+                data = {}
+
+        data["sales_tab_ui"] = self._sales_ui_state
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
         except Exception:
             pass
 

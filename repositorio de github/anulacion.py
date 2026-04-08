@@ -1,0 +1,2111 @@
+import json
+import logging
+import os
+import uuid
+import re
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+from urllib.parse import urlparse
+
+import requests
+
+import auth
+from mh_auth import auth_headers
+from db import DB
+from utils import stable_json
+from utils.versioned_dte import resolve_version_dir
+from paths import ensure_user_dir
+from utils.catalogos import TRIBUTO_IVA
+from utils.sanitize import solo_digitos
+from utils.fecha import TZ_EL_SALVADOR
+
+from dte import (
+    _load_datos_negocio,
+    _load_dte_api_config,
+    _decode_jws_payload,
+    _is_persona_juridica,
+    _choose_nombre,
+    normalize_nombre,
+    format_cliente_id_from_dui,
+    detect_user_agent,
+    _parse_error_response,
+    APP_VERSION,
+    _log_jwt_diagnostics,
+    _post_json,
+)
+from utils.jws import sign_json
+from utils.env import env_flag
+
+
+logger = logging.getLogger(__name__)
+
+
+UUID36_RE = re.compile(r"^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$")
+SELLO40_RE = re.compile(r"^[0-9A-Z]{40}$")
+# Acepta cualquier tipoDte de 2 dígitos y el bloque SxxxPxxx seguido de 15 dígitos.
+NUM_CONTROL_RE = re.compile(r"^DTE-[0-9]{2}-S[A-Z0-9]{3}P[A-Z0-9]{3}-[0-9]{15}$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+TEL_EMISOR_RE = re.compile(r"^[0-9+;]{8,26}$")
+TEL_RECEPTOR_RE = re.compile(r"^[0-9+;]{8,50}$")
+
+TIPO_ESTABLECIMIENTOS = {"01", "02", "04", "07", "20"}
+TIPO_DOC_CAT22 = {"36", "13", "02", "03", "37"}
+TIPO_DTE_VALIDOS = {"01", "03", "04", "05", "06", "07", "08", "09", "10", "11", "14", "15"}
+TIPO_ANULACION_VALIDOS = {1, 2, 3}
+ACCEPTED_EVENT_STATES = {"recibido", "procesado", "aceptado"}
+ACCEPTED_EVENT_STATE_ALIASES = {
+    "recibida": "recibido",
+    "procesada": "procesado",
+    "aceptada": "aceptado",
+}
+
+ERROR_REEMPLAZO_TIPO_INDETERMINADO = (
+    "No se pudo determinar el tipo del DTE de reemplazo; verifica que exista el "
+    "documento.json o la respuesta almacenada."
+)
+ERROR_REEMPLAZO_NO_RECEPCION = (
+    "El DTE de reemplazo no existe o no ha sido recepcionado por MH."
+)
+ERROR_REEMPLAZO_DISTINTO = (
+    "El documento de reemplazo debe ser distinto al que se desea anular."
+)
+ERROR_REEMPLAZO_TIPO = (
+    "El DTE de reemplazo debe ser del mismo tipo que el documento a invalidar."
+)
+ERROR_REEMPLAZO_EMISOR = (
+    "El DTE de reemplazo debe pertenecer al mismo emisor que el documento a invalidar."
+)
+ERROR_REEMPLAZO_FECHA = (
+    "El DTE de reemplazo debe tener una fecha de emisión igual o posterior al documento a invalidar."
+)
+
+
+def _load_json_file(path: str | None) -> dict | None:
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def normalize_ambiente(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text in {"00", "01"}:
+        return text
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if digits[:2] in {"00", "01"}:
+        return digits[:2]
+    lowered = text.lower()
+    if lowered.startswith("pru") or "prue" in lowered:
+        return "00"
+    if lowered.startswith("pro"):
+        return "01"
+    if text == "0":
+        return "00"
+    if text == "1":
+        return "01"
+    return text[:2]
+
+
+def _canonical_event_state(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    estado = str(raw).strip().lower()
+    if not estado:
+        return None
+    estado = ACCEPTED_EVENT_STATE_ALIASES.get(estado, estado)
+    if estado in ACCEPTED_EVENT_STATES:
+        return estado
+    return None
+
+
+def _normalize_documento_id(value: str | None) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip().upper()
+    if not text:
+        return ""
+    digits = solo_digitos(text)
+    if digits:
+        return digits
+    return text
+
+
+def _load_dte_json_from_venta(db: DB, venta_id: int | None) -> dict | None:
+    if db is None or venta_id is None:
+        return None
+    try:
+        db.ensure_column("ventas", "extra", "TEXT")
+    except Exception:
+        pass
+    try:
+        row = db.cursor.execute(
+            "SELECT extra FROM ventas WHERE id=?",
+            (venta_id,),
+        ).fetchone()
+    except Exception:
+        row = None
+    if row and row["extra"]:
+        extra_raw = row["extra"]
+        extra = None
+        if isinstance(extra_raw, str):
+            try:
+                extra = json.loads(extra_raw)
+            except Exception:
+                extra = None
+        if isinstance(extra, dict):
+            for key in ("dteJsonPath", "jsonPath"):
+                data = _load_json_file(extra.get(key))
+                if data:
+                    ident = data.get("identificacion") or {}
+                    cod = str(ident.get("codigoGeneracion") or "").upper()
+                    if not cod or cod == str(extra.get("codigoGeneracion", "")).upper():
+                        return data
+    getter = getattr(db, "get_factura_pdf", None)
+    pdf_path = None
+    if callable(getter):
+        try:
+            pdf_path = getter(venta_id)
+        except Exception:
+            pdf_path = None
+    if pdf_path:
+        json_path = os.path.splitext(pdf_path)[0] + ".json"
+        data = _load_json_file(json_path)
+        if data:
+            ident = data.get("identificacion") or {}
+            cod = str(ident.get("codigoGeneracion") or "").upper()
+            if cod:
+                return data
+    return None
+
+
+def _persist_anulacion_metadata(
+    target_dir: str,
+    data: dict | None,
+    *,
+    json_path: str | None = None,
+    codigo_dte: str | None = None,
+    dte_json_path: str | None = None,
+    respuesta: dict | None = None,
+) -> None:
+    if not target_dir or not isinstance(data, dict):
+        return
+
+    metadata_path = os.path.join(target_dir, "metadata.json")
+    existing: dict[str, object] = {}
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            existing = loaded
+    except Exception:
+        existing = {}
+
+    metadata: dict[str, object] = dict(existing)
+
+    identificacion = data.get("identificacion")
+    if not isinstance(identificacion, dict):
+        identificacion = {}
+    evento_meta = dict(metadata.get("evento") or {})
+    codigo_evento = identificacion.get("codigoGeneracion")
+    if isinstance(codigo_evento, str) and codigo_evento.strip():
+        evento_meta["codigoGeneracion"] = codigo_evento.strip().upper()
+    if isinstance(json_path, str) and json_path.strip():
+        evento_meta["jsonPath"] = json_path.strip()
+    metadata["evento"] = evento_meta
+
+    ident_meta = dict(metadata.get("identificacion") or {})
+    fec_anula = identificacion.get("fecAnula")
+    if fec_anula not in (None, ""):
+        ident_meta["fecAnula"] = str(fec_anula)
+    hor_anula = identificacion.get("horAnula")
+    if hor_anula not in (None, ""):
+        ident_meta["horAnula"] = str(hor_anula)
+    metadata["identificacion"] = ident_meta
+
+    motivo = data.get("motivo")
+    if isinstance(motivo, dict):
+        metadata["motivo"] = dict(motivo)
+
+    documento = data.get("documento")
+    if not isinstance(documento, dict):
+        documento = {}
+    documento_meta = dict(metadata.get("documento") or {})
+    codigo_dte_val = codigo_dte
+    if not codigo_dte_val:
+        codigo_raw = documento.get("codigoGeneracion")
+        if isinstance(codigo_raw, str) and codigo_raw.strip():
+            codigo_dte_val = codigo_raw.strip().upper()
+    if isinstance(codigo_dte_val, str) and codigo_dte_val.strip():
+        documento_meta["codigoGeneracion"] = codigo_dte_val.strip().upper()
+    numero_control = documento.get("numeroControl")
+    if isinstance(numero_control, str) and numero_control.strip():
+        documento_meta["numeroControl"] = numero_control.strip().upper()
+    tipo_doc = documento.get("tipoDte") or documento.get("tipoDocumento")
+    if tipo_doc not in (None, ""):
+        tipo_text = str(tipo_doc).strip()
+        if tipo_text.isdigit() and len(tipo_text) < 2:
+            tipo_text = tipo_text.zfill(2)
+        documento_meta["tipoDte"] = tipo_text
+    sello_recibido = documento.get("selloRecibido")
+    if isinstance(sello_recibido, str) and sello_recibido.strip():
+        documento_meta["selloRecibido"] = sello_recibido.strip().upper()
+    if isinstance(dte_json_path, str) and dte_json_path.strip():
+        documento_meta["dteJsonPath"] = dte_json_path.strip()
+        documento_meta["jsonPath"] = dte_json_path.strip()
+    metadata["documento"] = documento_meta
+
+    if isinstance(respuesta, dict):
+        respuesta_meta = dict(metadata.get("respuesta") or {})
+        estado_resp = None
+        for key in ("estado", "estadoEvento", "descripcionEstado"):
+            valor = respuesta.get(key)
+            if isinstance(valor, str) and valor.strip():
+                estado_resp = valor.strip()
+                break
+        if estado_resp:
+            respuesta_meta["estado"] = estado_resp
+        sello_resp = respuesta.get("sello") or respuesta.get("selloRecepcion")
+        if isinstance(sello_resp, str) and sello_resp.strip():
+            respuesta_meta["sello"] = sello_resp.strip()
+        if respuesta_meta:
+            metadata["respuesta"] = respuesta_meta
+
+    try:
+        stable_json.save_file(
+            metadata_path,
+            stable_json.stable_stringify(metadata, indent=2),
+        )
+    except Exception:
+        logger.exception(
+            "No se pudo escribir metadatos del evento de anulación %s",
+            codigo_dte_val or codigo_evento or "",
+        )
+
+
+def _extract_metadata(source: dict | None) -> dict:
+    metadata = {
+        "codigo_generacion": None,
+        "tipo_dte": None,
+        "fecha_emision": None,
+        "ambiente": None,
+        "numero_control": None,
+        "emisor_nombre": None,
+        "emisor_documento": None,
+        "receptor_nombre": None,
+        "receptor_documento": None,
+        "total": None,
+    }
+    if not isinstance(source, dict):
+        return metadata
+
+    ident = source.get("identificacion")
+    if not isinstance(ident, dict):
+        ident = source.get("identificacionDocumento")
+    if isinstance(ident, dict):
+        codigo_generacion = ident.get("codigoGeneracion")
+        if codigo_generacion is not None:
+            metadata["codigo_generacion"] = str(codigo_generacion).strip().upper()
+        tipo_val = ident.get("tipoDte") or ident.get("tipoDTE")
+        if tipo_val is not None:
+            metadata["tipo_dte"] = str(tipo_val).zfill(2)
+        fec = ident.get("fecEmi") or ident.get("fechaEmision") or ident.get("fecha")
+        if fec is not None:
+            metadata["fecha_emision"] = str(fec)[:10]
+        num_control = ident.get("numeroControl") or ident.get("numControl")
+        if num_control is not None:
+            metadata["numero_control"] = str(num_control).strip()
+        amb = ident.get("ambiente")
+        if amb is not None:
+            metadata["ambiente"] = normalize_ambiente(amb)
+
+    emisor = source.get("emisor")
+    if not isinstance(emisor, dict):
+        for key in ("emisorGenerador", "emisorResponsable", "sujetoGenerador", "transmitente"):
+            cand = source.get(key)
+            if isinstance(cand, dict):
+                emisor = cand
+                break
+    if isinstance(emisor, dict):
+        nombre_emisor = (
+            emisor.get("nombre")
+            or emisor.get("nombreComercial")
+            or emisor.get("razonSocial")
+        )
+        if nombre_emisor:
+            metadata["emisor_nombre"] = str(nombre_emisor).strip()
+        doc_emisor = (
+            emisor.get("nit")
+            or emisor.get("numDocumento")
+            or emisor.get("nrc")
+            or emisor.get("dui")
+        )
+        if doc_emisor:
+            metadata["emisor_documento"] = str(doc_emisor).strip()
+
+    receptor = source.get("receptor")
+    if not isinstance(receptor, dict):
+        receptor = source.get("cliente")
+    if isinstance(receptor, dict):
+        nombre = receptor.get("nombre") or receptor.get("razonSocial")
+        if nombre:
+            metadata["receptor_nombre"] = str(nombre).strip()
+        doc = (
+            receptor.get("numDocumento")
+            or receptor.get("nit")
+            or receptor.get("dui")
+            or receptor.get("nrc")
+        )
+        if doc:
+            metadata["receptor_documento"] = str(doc).strip()
+
+    resumen = source.get("resumen")
+    if not isinstance(resumen, dict):
+        resumen = source.get("totales")
+    if isinstance(resumen, dict):
+        for key in (
+            "montoTotalOperacion",
+            "totalPagar",
+            "totalPagarSinRedondeo",
+            "totalGeneral",
+        ):
+            val = resumen.get(key)
+            if val is not None:
+                try:
+                    metadata["total"] = float(Decimal(str(val)))
+                except (InvalidOperation, TypeError, ValueError):
+                    continue
+                else:
+                    break
+
+    if metadata["ambiente"] is None:
+        amb = source.get("ambiente")
+        if amb is not None:
+            metadata["ambiente"] = normalize_ambiente(amb)
+
+    if metadata["codigo_generacion"] in (None, ""):
+        codigo_generacion = source.get("codigoGeneracion")
+        if codigo_generacion is not None:
+            metadata["codigo_generacion"] = str(codigo_generacion).strip().upper()
+
+    return metadata
+
+
+def _merge_metadata(primary: dict, secondary: dict) -> dict:
+    for key, value in secondary.items():
+        if key not in primary:
+            primary[key] = value
+            continue
+        if primary[key] in (None, "") and value not in (None, ""):
+            primary[key] = value
+    return primary
+
+
+def _parse_respuesta_documento(respuesta_raw: str | None) -> dict | None:
+    if not respuesta_raw:
+        return None
+    data = None
+    if isinstance(respuesta_raw, dict):
+        data = respuesta_raw
+    elif isinstance(respuesta_raw, str):
+        try:
+            data = json.loads(respuesta_raw)
+        except Exception:
+            data = None
+    else:
+        return None
+    if not isinstance(data, dict):
+        return None
+    for key in ("documento", "dte", "acuseRecibido", "acuseRecepcion"):
+        doc = data.get(key)
+        if isinstance(doc, dict):
+            if key in {"acuseRecibido", "acuseRecepcion"}:
+                inner = doc.get("documento") or doc.get("dte")
+                if isinstance(inner, dict):
+                    return inner
+                continue
+            return doc
+        if isinstance(doc, str):
+            try:
+                parsed = json.loads(doc)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                return parsed
+    return None
+
+
+def _coerce_json_object(raw) -> dict | None:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _pick_sello_from_payload(payload: dict | None) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    candidates = [
+        payload.get("selloRecibido"),
+        payload.get("selloRecepcion"),
+        payload.get("sello"),
+    ]
+    detalle = payload.get("detalle")
+    if isinstance(detalle, dict):
+        candidates.extend(
+            [
+                detalle.get("selloRecibido"),
+                detalle.get("selloRecepcion"),
+                detalle.get("sello"),
+            ]
+        )
+    for value in candidates:
+        text = str(value or "").strip().upper()
+        if text:
+            return text
+    return ""
+
+
+def prepare_factura_for_invalidacion(
+    factura: dict,
+    *,
+    db: DB | None = None,
+    venta_id: int | None = None,
+) -> dict:
+    if not isinstance(factura, dict):
+        raise ValueError("Factura incompleta para invalidación")
+
+    resolved = dict(factura)
+    ident = resolved.get("identificacion")
+    if not isinstance(ident, dict):
+        ident = {}
+    ident = dict(ident)
+
+    metadata = _extract_metadata(resolved)
+
+    def _merge_from_source(source) -> None:
+        nonlocal metadata
+        source_obj = _coerce_json_object(source)
+        if not source_obj:
+            return
+        metadata = _merge_metadata(metadata, _extract_metadata(source_obj))
+        doc = _parse_respuesta_documento(source_obj)
+        if doc:
+            metadata = _merge_metadata(metadata, _extract_metadata(doc))
+
+    sello = str(
+        resolved.get("selloRecibido")
+        or resolved.get("selloRecepcion")
+        or resolved.get("sello")
+        or ""
+    ).strip().upper()
+
+    respuesta_payload = _coerce_json_object(resolved.get("respuesta"))
+    if respuesta_payload:
+        _merge_from_source(respuesta_payload)
+        if not sello:
+            sello = _pick_sello_from_payload(respuesta_payload)
+
+    detalle_payload = _coerce_json_object(resolved.get("detalle"))
+    if detalle_payload:
+        _merge_from_source(detalle_payload)
+        if not sello:
+            sello = _pick_sello_from_payload(detalle_payload)
+
+    extra_payload = _coerce_json_object(resolved.get("extra"))
+    if extra_payload:
+        _merge_from_source(extra_payload)
+        if not sello:
+            sello = _pick_sello_from_payload(extra_payload)
+
+    if not sello and db is not None:
+        where_parts = []
+        params: list[str | int] = []
+
+        codigo_hint = str(
+            metadata.get("codigo_generacion")
+            or ident.get("codigoGeneracion")
+            or ""
+        ).strip().upper()
+        numero_hint = str(
+            metadata.get("numero_control")
+            or ident.get("numeroControl")
+            or ""
+        ).strip().upper()
+
+        if venta_id is not None:
+            where_parts.append("venta_id=?")
+            params.append(int(venta_id))
+        if codigo_hint:
+            where_parts.append("UPPER(codigo_generacion)=?")
+            params.append(codigo_hint)
+        if numero_hint:
+            where_parts.append("UPPER(numero_control)=?")
+            params.append(numero_hint)
+
+        if where_parts:
+            try:
+                db.ensure_column("dte_envios", "respuesta", "TEXT")
+                db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+                db.ensure_column("dte_envios", "numero_control", "TEXT")
+                db.ensure_column("dte_envios", "ambiente", "TEXT")
+            except Exception:
+                pass
+
+            try:
+                rows = db.cursor.execute(
+                    "SELECT TRIM(sello) AS sello, respuesta, codigo_generacion, numero_control, ambiente "
+                    "FROM dte_envios "
+                    f"WHERE {' OR '.join(where_parts)} ORDER BY id DESC LIMIT 20",
+                    tuple(params),
+                ).fetchall()
+            except Exception:
+                rows = []
+
+            for row in rows:
+                row_dict = dict(row)
+                payload = _coerce_json_object(row_dict.get("respuesta"))
+                _merge_from_source(payload)
+                metadata = _merge_metadata(
+                    metadata,
+                    _extract_metadata(
+                        {
+                            "identificacion": {
+                                "codigoGeneracion": row_dict.get("codigo_generacion"),
+                                "numeroControl": row_dict.get("numero_control"),
+                                "ambiente": row_dict.get("ambiente"),
+                            }
+                        }
+                    ),
+                )
+                row_sello = str(row_dict.get("sello") or "").strip().upper()
+                if not row_sello and payload:
+                    row_sello = _pick_sello_from_payload(payload)
+                if row_sello:
+                    sello = row_sello
+                    if SELLO40_RE.fullmatch(sello):
+                        break
+
+            if not SELLO40_RE.fullmatch(sello):
+                try:
+                    db._ensure_dte_respuestas_hacienda_table()
+                    rows_mh = db.cursor.execute(
+                        "SELECT sello, respuesta_json, detalle_json, codigo_generacion, numero_control, ambiente "
+                        "FROM dte_respuestas_hacienda "
+                        f"WHERE {' OR '.join(where_parts)} ORDER BY id DESC LIMIT 20",
+                        tuple(params),
+                    ).fetchall()
+                except Exception:
+                    rows_mh = []
+
+                for row in rows_mh:
+                    row_dict = dict(row)
+                    payload = _coerce_json_object(row_dict.get("respuesta_json"))
+                    if payload:
+                        _merge_from_source(payload)
+                    detalle = _coerce_json_object(row_dict.get("detalle_json"))
+                    if detalle:
+                        _merge_from_source(detalle)
+                    metadata = _merge_metadata(
+                        metadata,
+                        _extract_metadata(
+                            {
+                                "identificacion": {
+                                    "codigoGeneracion": row_dict.get("codigo_generacion"),
+                                    "numeroControl": row_dict.get("numero_control"),
+                                    "ambiente": row_dict.get("ambiente"),
+                                }
+                            }
+                        ),
+                    )
+                    row_sello = str(row_dict.get("sello") or "").strip().upper()
+                    if not row_sello and payload:
+                        row_sello = _pick_sello_from_payload(payload)
+                    if row_sello:
+                        sello = row_sello
+                        if SELLO40_RE.fullmatch(sello):
+                            break
+
+    codigo_gen = str(
+        metadata.get("codigo_generacion")
+        or ident.get("codigoGeneracion")
+        or ""
+    ).strip().upper()
+    numero_control = str(
+        metadata.get("numero_control")
+        or ident.get("numeroControl")
+        or ""
+    ).strip().upper()
+    fec_emi = str(
+        metadata.get("fecha_emision")
+        or ident.get("fecEmi")
+        or ""
+    ).strip()
+    ambiente = normalize_ambiente(
+        metadata.get("ambiente")
+        or ident.get("ambiente")
+    )
+
+    if not (codigo_gen and numero_control and fec_emi):
+        raise ValueError("Factura incompleta para invalidación")
+    if not UUID36_RE.fullmatch(codigo_gen):
+        raise ValueError("codigoGeneracion de la factura inválido")
+    if not NUM_CONTROL_RE.fullmatch(numero_control):
+        raise ValueError("numeroControl de la factura inválido")
+    try:
+        datetime.strptime(fec_emi[:10], "%Y-%m-%d")
+    except Exception as exc:
+        raise ValueError("Fecha de emisión del DTE inválida") from exc
+    sello = str(sello or "").strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        raise ValueError(
+            "selloRecibido inválido; debe coincidir con el sello alfanumérico de 40 caracteres emitido por MH"
+        )
+
+    ident["codigoGeneracion"] = codigo_gen
+    ident["numeroControl"] = numero_control
+    ident["fecEmi"] = fec_emi[:10]
+    if ambiente:
+        ident["ambiente"] = ambiente
+
+    resolved["identificacion"] = ident
+    resolved["selloRecibido"] = sello
+    return resolved
+
+
+def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> list[dict]:
+    if db is None:
+        return []
+    filtros = filtros or {}
+    try:
+        db.ensure_column("dte_envios", "respuesta", "TEXT")
+        db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        db.ensure_column("dte_envios", "numero_control", "TEXT")
+        db.ensure_column("dte_envios", "ambiente", "TEXT")
+        db.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dte_envios_codigo_generacion ON dte_envios(codigo_generacion)"
+        )
+        db.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dte_envios_fecha_hora ON dte_envios(fecha_hora)"
+        )
+        db.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dte_envios_estado ON dte_envios(estado)"
+        )
+        db.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dte_envios_ambiente ON dte_envios(ambiente)"
+        )
+    except Exception:
+        pass
+
+    fecha_inicio = filtros.get("fecha_inicio")
+    fecha_fin = filtros.get("fecha_fin")
+    params: list = []
+    query = [
+        "SELECT id, venta_id, fecha_hora, modo, estado, TRIM(sello) AS sello,",
+        "       TRIM(codigo_generacion) AS codigo_generacion, numero_control,",
+        "       respuesta, ambiente",
+        "  FROM dte_envios",
+        " WHERE 1=1",
+    ]
+    if fecha_inicio:
+        query.append("   AND date(fecha_hora) >= date(?)")
+        params.append(fecha_inicio)
+    if fecha_fin:
+        query.append("   AND date(fecha_hora) <= date(?)")
+        params.append(fecha_fin)
+    query.append(" ORDER BY fecha_hora DESC, id DESC")
+
+    try:
+        rows = [dict(row) for row in db.cursor.execute("\n".join(query), params).fetchall()]
+    except Exception:
+        return []
+
+    exclude_uuid = str(filtros.get("exclude_uuid") or "").strip().upper()
+    ambiente_objetivo = normalize_ambiente(filtros.get("ambiente"))
+    tipo_objetivo = filtros.get("tipo_dte")
+    if tipo_objetivo is not None:
+        tipo_objetivo = str(tipo_objetivo).zfill(2)
+    receptor_docs_raw = filtros.get("receptor_documentos") or []
+    receptor_docs: set[str] = set()
+    for val in receptor_docs_raw:
+        norm = _normalize_documento_id(val)
+        if norm:
+            receptor_docs.add(norm)
+    permitir_tipo_mismatch = bool(filtros.get("permitir_tipo_mismatch"))
+    permitir_ambiente_mismatch = bool(filtros.get("permitir_ambiente_mismatch"))
+    recepcionado_only = bool(filtros.get("recepcionado"))
+    mismo_receptor = bool(filtros.get("mismo_receptor"))
+    search = str(filtros.get("search") or "").strip().upper()
+    limit = filtros.get("limit")
+    if isinstance(limit, int) and limit <= 0:
+        limit = None
+
+    results: list[dict] = []
+    for row in rows:
+        venta_id = row.get("venta_id")
+        metadata: dict | None = None
+
+        def _get_metadata() -> dict:
+            nonlocal metadata
+            if metadata is None:
+                payload_local = _load_dte_json_from_venta(db, venta_id)
+                respuesta_local = _parse_respuesta_documento(row.get("respuesta"))
+                primary = _extract_metadata(payload_local)
+                metadata = _merge_metadata(primary, _extract_metadata(respuesta_local))
+            return metadata
+
+        metadata = _get_metadata()
+
+        codigo = str(row.get("codigo_generacion") or "").strip().upper()
+        if not codigo:
+            codigo = str((metadata.get("codigo_generacion") or "")).strip().upper()
+
+        if not codigo or (exclude_uuid and codigo == exclude_uuid):
+            continue
+        if metadata.get("codigo_generacion") in (None, ""):
+            metadata["codigo_generacion"] = codigo
+
+        sello = str(row.get("sello") or "").strip().upper()
+        sello_valido = bool(SELLO40_RE.fullmatch(sello))
+        estado_canonico = _canonical_event_state(row.get("estado"))
+
+        if recepcionado_only:
+            if estado_canonico not in ACCEPTED_EVENT_STATES or not sello_valido:
+                continue
+
+        numero_control = metadata.get("numero_control") or row.get("numero_control")
+        ambiente_doc = metadata.get("ambiente")
+        if ambiente_doc is None:
+            ambiente_doc = normalize_ambiente(row.get("ambiente"))
+            if ambiente_doc:
+                metadata["ambiente"] = ambiente_doc
+
+        ambiente_real = metadata.get("ambiente")
+        if ambiente_objetivo and not permitir_ambiente_mismatch:
+            if ambiente_real and ambiente_real != ambiente_objetivo:
+                continue
+            if not ambiente_real:
+                metadata["ambiente"] = ambiente_objetivo
+                ambiente_real = ambiente_objetivo
+        if ambiente_real is None:
+            ambiente_real = ambiente_doc
+
+        tipo_dte = metadata.get("tipo_dte")
+        tipo_indeterminado = False
+        if tipo_dte is None:
+            tipo_indeterminado = True
+        elif tipo_objetivo and tipo_dte != tipo_objetivo:
+            if not permitir_tipo_mismatch:
+                continue
+
+        receptor_doc = metadata.get("receptor_documento")
+        receptor_nombre = metadata.get("receptor_nombre")
+        receptor_norm = _normalize_documento_id(receptor_doc)
+        coincide_receptor = True
+        if receptor_docs:
+            coincide_receptor = receptor_norm in receptor_docs
+        if mismo_receptor and receptor_docs and not coincide_receptor:
+            continue
+
+        total = metadata.get("total")
+        fecha_emision = metadata.get("fecha_emision")
+        fecha_sort = None
+        if fecha_emision:
+            try:
+                fecha_sort = datetime.strptime(str(fecha_emision), "%Y-%m-%d")
+            except Exception:
+                fecha_sort = None
+        if fecha_sort is None:
+            raw_fecha = row.get("fecha_hora")
+            if raw_fecha:
+                try:
+                    fecha_sort = datetime.fromisoformat(raw_fecha)
+                except Exception:
+                    fecha_sort = None
+                else:
+                    if fecha_sort.tzinfo is not None:
+                        fecha_sort = (
+                            fecha_sort.astimezone(timezone.utc).replace(tzinfo=None)
+                        )
+                    if not fecha_emision:
+                        fecha_emision = str(raw_fecha)[:10]
+
+        if search:
+            campos = [
+                codigo,
+                str(numero_control or "").upper(),
+                str(receptor_nombre or "").upper(),
+                receptor_norm,
+            ]
+            if total is not None:
+                campos.append(f"{total:.2f}".upper())
+            if not any(search in campo for campo in campos if campo):
+                continue
+
+        estado_display = estado_canonico or (row.get("estado") or "").strip()
+        seleccionable = (
+            not tipo_indeterminado
+            and estado_canonico in ACCEPTED_EVENT_STATES
+            and sello_valido
+        )
+
+        candidato = {
+            "codigo_generacion": codigo,
+            "numero_control": str(numero_control or ""),
+            "estado": estado_display,
+            "estado_canonico": estado_canonico,
+            "con_sello": sello_valido,
+            "sello": sello,
+            "tipo_dte": tipo_dte,
+            "tipo_indeterminado": tipo_indeterminado,
+            "emisor_documento": metadata.get("emisor_documento"),
+            "emisor_nombre": metadata.get("emisor_nombre"),
+            "receptor_nombre": receptor_nombre,
+            "receptor_documento": receptor_doc,
+            "coincide_receptor": coincide_receptor,
+            "total": total,
+            "fecha_emision": fecha_emision,
+            "ambiente": ambiente_real,
+            "venta_id": venta_id,
+            "seleccionable": seleccionable,
+            "_sort_key": (
+                fecha_sort or datetime.min,
+                {
+                    "aceptado": 3,
+                    "procesado": 2,
+                    "recibido": 1,
+                }.get(estado_canonico, 0),
+            ),
+        }
+        candidato["preselect"] = bool(
+            candidato["seleccionable"]
+            and candidato["coincide_receptor"]
+            and (tipo_objetivo is None or candidato.get("tipo_dte") == tipo_objetivo)
+        )
+
+        results.append(candidato)
+        if isinstance(limit, int) and len(results) >= limit:
+            break
+
+    results.sort(
+        key=lambda item: item.get("_sort_key", (datetime.min, 0)),
+        reverse=True,
+    )
+    for item in results:
+        item.pop("_sort_key", None)
+
+    return results
+
+
+def _ensure_replacement_document(db: DB | None, codigo: str) -> dict:
+    if db is None:
+        raise ValueError(ERROR_REEMPLAZO_TIPO_INDETERMINADO)
+
+    try:
+        db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        db.ensure_column("dte_envios", "numero_control", "TEXT")
+        db.ensure_column("dte_envios", "respuesta", "TEXT")
+        db.ensure_column("dte_envios", "ambiente", "TEXT")
+    except Exception:
+        pass
+
+    codigo = (codigo or "").strip().upper()
+    row = None
+    try:
+        row = db.cursor.execute(
+            """
+            SELECT venta_id, estado, TRIM(sello) AS sello, respuesta, numero_control, ambiente, fecha_hora
+              FROM dte_envios
+             WHERE UPPER(codigo_generacion)=?
+             ORDER BY id DESC LIMIT 1
+            """,
+            (codigo,),
+        ).fetchone()
+    except Exception:
+        row = None
+    if row is None:
+        try:
+            row = db.cursor.execute(
+                """
+                SELECT venta_id, estado, TRIM(sello) AS sello, respuesta, numero_control, ambiente, fecha_hora
+                  FROM dte_envios
+                 WHERE UPPER(respuesta) LIKE ?
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (f"%{codigo}%",),
+            ).fetchone()
+        except Exception:
+            row = None
+    if row is None:
+        raise ValueError(ERROR_REEMPLAZO_NO_RECEPCION)
+
+    row_dict = dict(row)
+    estado_canonico = _canonical_event_state(row_dict.get("estado"))
+    sello = str(row_dict.get("sello") or "").strip().upper()
+    respuesta_raw = row_dict.get("respuesta")
+    if (not SELLO40_RE.fullmatch(sello)) and respuesta_raw:
+        try:
+            resp_json = json.loads(respuesta_raw)
+        except Exception:
+            resp_json = None
+        else:
+            if isinstance(resp_json, dict):
+                sello_resp = (
+                    str(
+                        resp_json.get("selloRecibido")
+                        or resp_json.get("selloRecepcion")
+                        or resp_json.get("sello")
+                        or ""
+                    )
+                    .strip()
+                    .upper()
+                )
+                if SELLO40_RE.fullmatch(sello_resp):
+                    sello = sello_resp
+    if not SELLO40_RE.fullmatch(sello) or estado_canonico not in ACCEPTED_EVENT_STATES:
+        raise ValueError(ERROR_REEMPLAZO_NO_RECEPCION)
+
+    venta_id = row_dict.get("venta_id")
+    payload = _load_dte_json_from_venta(db, venta_id)
+    respuesta_doc = _parse_respuesta_documento(respuesta_raw)
+
+    metadata = _extract_metadata(None)
+    if payload:
+        ident = payload.get("identificacion") or {}
+        codigo_archivo = str(ident.get("codigoGeneracion") or "").strip().upper()
+        if not codigo_archivo or codigo_archivo == codigo:
+            metadata = _merge_metadata(metadata, _extract_metadata(payload))
+    if respuesta_doc:
+        metadata = _merge_metadata(metadata, _extract_metadata(respuesta_doc))
+
+    if metadata.get("ambiente") is None:
+        metadata["ambiente"] = normalize_ambiente(row_dict.get("ambiente"))
+    if not metadata.get("numero_control"):
+        metadata["numero_control"] = str(row_dict.get("numero_control") or "").strip()
+    if not metadata.get("fecha_emision"):
+        fecha_raw = row_dict.get("fecha_hora")
+        if fecha_raw:
+            metadata["fecha_emision"] = str(fecha_raw)[:10]
+
+    tipo_dte = metadata.get("tipo_dte")
+    if tipo_dte is None:
+        raise ValueError(ERROR_REEMPLAZO_TIPO_INDETERMINADO)
+
+    metadata.update(
+        {
+            "codigo_generacion": codigo,
+            "estado_canonico": estado_canonico,
+            "sello": sello,
+        }
+    )
+    return metadata
+
+
+def _quick_invalidacion_checks(
+    evento: dict,
+    *,
+    ambiente_raiz: str | None = None,
+    db: DB | None = None,
+) -> None:
+    if not isinstance(evento, dict):
+        raise ValueError("Evento de invalidación inválido")
+
+    ident = evento.get("identificacion") or {}
+    if not isinstance(ident, dict):
+        raise ValueError("Evento de invalidación sin identificación")
+
+    if _is_fse_anulacion_payload(evento):
+        _validate_fse_anulacion(evento, ambiente_raiz=ambiente_raiz)
+        return
+
+    version = ident.get("version")
+    if str(version) != "2":
+        raise ValueError("La invalidación debe usar identificacion.version = 2")
+
+    ambiente_evento = normalize_ambiente(ident.get("ambiente"))
+    if ambiente_evento is None:
+        raise ValueError("Ambiente de la invalidación no determinado")
+
+    if ambiente_raiz is not None:
+        ambiente_raiz_norm = normalize_ambiente(ambiente_raiz)
+        if ambiente_raiz_norm and ambiente_evento != ambiente_raiz_norm:
+            raise ValueError("El ambiente del evento no coincide con el del envío")
+
+    documento = evento.get("documento") or {}
+    if not isinstance(documento, dict):
+        raise ValueError("Evento de invalidación sin documento")
+
+    tipo_dte_evento = str(documento.get("tipoDte") or "").zfill(2)
+    if not tipo_dte_evento:
+        raise ValueError("tipoDte del documento de invalidación requerido")
+
+    numero_control_evento = str(documento.get("numeroControl") or "").strip().upper()
+    if not numero_control_evento:
+        raise ValueError("numeroControl del documento de invalidación requerido")
+
+    sello_evento = str(documento.get("selloRecibido") or "").strip().upper()
+    if not SELLO40_RE.fullmatch(sello_evento):
+        raise ValueError("selloRecibido del documento de invalidación inválido")
+
+    monto_iva = documento.get("montoIva")
+    if monto_iva is not None:
+        try:
+            monto_decimal = Decimal(str(monto_iva))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("montoIva del documento de invalidación inválido") from exc
+        if monto_decimal < 0:
+            raise ValueError("montoIva no puede ser negativo")
+        try:
+            monto_decimal.quantize(Decimal("0.01"))
+        except InvalidOperation as exc:  # pragma: no cover - rounding errors
+            raise ValueError("montoIva debe tener dos decimales") from exc
+
+    motivo = evento.get("motivo") or {}
+    if isinstance(motivo, dict) and motivo.get("tipoAnulacion") == 2:
+        if documento.get("codigoGeneracionR") not in (None, ""):
+            raise ValueError(
+                "Para tipoAnulacion=2 el documento.codigoGeneracionR debe ser nulo"
+            )
+
+    metadata = None
+    codigo_generacion = str(documento.get("codigoGeneracion") or "").strip().upper()
+    if db is not None and codigo_generacion:
+        try:
+            metadata = _ensure_replacement_document(db, codigo_generacion)
+        except ValueError:
+            metadata = None
+
+    if metadata:
+        tipo_dte_original = str(metadata.get("tipo_dte") or "").zfill(2)
+        if tipo_dte_original and tipo_dte_original != tipo_dte_evento:
+            raise ValueError("tipoDte del documento no coincide con el DTE original")
+
+        numero_control_original = str(metadata.get("numero_control") or "").strip().upper()
+        if numero_control_original and numero_control_original != numero_control_evento:
+            raise ValueError("numeroControl del documento no coincide con el DTE original")
+
+        sello_original = str(metadata.get("sello") or "").strip().upper()
+        if sello_original and sello_original != sello_evento:
+            raise ValueError("selloRecibido del documento no coincide con el acuse original")
+
+
+def _post_invalidacion(
+    url: str,
+    evento_data: dict,
+    *,
+    ambiente_config: str | None = None,
+    user_agent: str | None = None,
+    auth: dict | None = None,
+    opts: dict | None = None,
+    app_version: str | None = None,
+    dui: str | None = None,
+    client_id: str | None = None,
+) -> dict:
+    pu = urlparse(url)
+    assert pu.netloc in {
+        "apitest.dtes.mh.gob.sv",
+        "api.dtes.mh.gob.sv",
+    }, f"Host inválido: {url}"
+    assert pu.path.rstrip("/") == "/fesv/anulardte", f"Path inválido: {url}"
+
+    if not isinstance(evento_data, dict):
+        raise ValueError("Evento de invalidación inválido")
+
+    ident = evento_data.get("identificacion") if isinstance(evento_data, dict) else None
+    is_fse = _is_fse_anulacion_payload(evento_data)
+    ambiente_evento = normalize_ambiente((ident or {}).get("ambiente"))
+    ambiente_cfg = normalize_ambiente(ambiente_config)
+    ambiente_raiz = ambiente_evento or ambiente_cfg
+    if ambiente_raiz is None:
+        raise ValueError("No se pudo determinar el ambiente de envío de la invalidación")
+
+    if not isinstance(ident, dict):
+        ident = {}
+
+    documento_evento = evento_data.get("documento")
+    if not isinstance(documento_evento, dict):
+        documento_evento = {}
+
+    version_envio = 2
+    version_raw = ident.get("version")
+    if version_raw is not None:
+        try:
+            version_envio = int(str(version_raw))
+        except (TypeError, ValueError) as exc:
+            if not is_fse:
+                raise ValueError("Versión de la invalidación inválida") from exc
+            version_envio = 2
+    if not is_fse and version_envio != 2:
+        raise ValueError("La invalidación debe usar identificacion.version = 2")
+    if is_fse and version_envio <= 0:
+        version_envio = 2
+
+    id_envio_raw = evento_data.get("idEnvio")
+    if id_envio_raw in (None, ""):
+        id_envio_raw = ident.get("idEnvio")
+    try:
+        id_envio = int(str(id_envio_raw)) if id_envio_raw not in (None, "") else 1
+    except (TypeError, ValueError):
+        id_envio = 1
+    if id_envio <= 0:
+        id_envio = 1
+
+    try:
+        doc_rel_tipo = None
+        doc_rel = evento_data.get("documentoRelacionado")
+        if isinstance(doc_rel, list) and doc_rel:
+            first_rel = doc_rel[0]
+            if isinstance(first_rel, dict):
+                doc_rel_tipo = str(
+                    first_rel.get("tipoDte") or first_rel.get("tipoDTE") or ""
+                ).zfill(2)
+        tipo_envio = ident.get("tipoDte") or documento_evento.get("tipoDte")
+        logger.info(
+            "Enviando DTE de invalidación",
+            extra={
+                "tipoDte": tipo_envio,
+                "version": ident.get("version"),
+                "codigoGeneracion": ident.get("codigoGeneracion"),
+                "tipoDte_relacionado": doc_rel_tipo,
+            },
+        )
+        try:
+            debug_dir = ensure_user_dir("debug_anulaciones")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = debug_dir / f"anulacion_{ident.get('tipoDte', 'XX')}_{ts}.json"
+            fname.write_text(stable_json.stable_stringify(evento_data), encoding="utf-8")
+        except Exception:
+            logger.exception("No se pudo guardar JSON de depuración para anulacion")
+    except Exception:
+        logger.exception("No se pudo registrar log de envío de invalidación")
+
+    firmado = str(sign_json(evento_data)).strip()
+    if firmado.count(".") != 2:
+        raise ValueError("Firma de invalidación inválida")
+
+    try:
+        payload_firmado = _decode_jws_payload(firmado)
+    except ValueError as exc:
+        raise ValueError("Firma de invalidación inválida") from exc
+
+    ident_firmado = payload_firmado.get("identificacion") or {}
+    if not isinstance(ident_firmado, dict):
+        ident_firmado = {}
+    documento_firmado = payload_firmado.get("documento") or {}
+    if not isinstance(documento_firmado, dict):
+        documento_firmado = {}
+
+    def _norm_codigo(value: object) -> str:
+        return str(value or "").strip().upper()
+
+    cod_evento = _norm_codigo(ident.get("codigoGeneracion"))
+    cod_evento_firmado = _norm_codigo(ident_firmado.get("codigoGeneracion"))
+    if cod_evento and cod_evento_firmado and cod_evento != cod_evento_firmado:
+        raise ValueError("codigoGeneracion del evento no coincide con la firma")
+
+    cod_doc = _norm_codigo(documento_evento.get("codigoGeneracion"))
+    cod_doc_firmado = _norm_codigo(documento_firmado.get("codigoGeneracion"))
+    if cod_doc and cod_doc_firmado and cod_doc != cod_doc_firmado:
+        raise ValueError("codigoGeneracion del documento no coincide con la firma")
+
+    ambiente_firmado = normalize_ambiente(ident_firmado.get("ambiente"))
+    if ambiente_firmado:
+        if ambiente_raiz and ambiente_firmado != ambiente_raiz:
+            raise ValueError("El ambiente del evento firmado no coincide con el solicitado")
+        ambiente_raiz = ambiente_firmado
+
+    body = {
+        "ambiente": ambiente_raiz,
+        "idEnvio": id_envio,
+        "version": version_envio,
+        "documento": firmado,
+    }
+
+    body_types = {key: type(value).__name__ for key, value in body.items()}
+    try:
+        body_json = stable_json.stable_stringify(body, indent=2)
+    except Exception:  # pragma: no cover - fallback para logging
+        body_json = json.dumps(body, ensure_ascii=False)
+    logger.info("Body de invalidación listo (tipos=%s)", body_types)
+    logger.info("Body de invalidación contenido: %s", body_json)
+
+    client_id = client_id or format_cliente_id_from_dui(dui)
+    ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
+    headers = auth_headers(
+        {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": ua,
+            "app-version": str(app_version or APP_VERSION),
+        },
+        ambiente=ambiente_raiz,
+    ).copy()
+    if client_id:
+        headers.setdefault("cliente-id", str(client_id))
+
+    try:
+        resp, data, text_body = _post_json(url, headers, body, tag="post_invalidacion")
+    except requests.RequestException as exc:
+        return {"estado": "Error", "detalle": str(exc)}
+
+    if resp.status_code in {401, 403}:
+        _log_jwt_diagnostics(
+            headers.get("Authorization"),
+            now=datetime.now(timezone.utc),
+        )
+        if env_flag("DTE_DEBUG_HTTP"):
+            www_auth = resp.headers.get("WWW-Authenticate")
+            content_length = resp.headers.get("Content-Length") or resp.headers.get("content-length")
+            body_len = len(resp.content or b"")
+            if (
+                not (www_auth and str(www_auth).strip())
+                and (str(content_length or "").strip() in {"", "0"})
+                and body_len == 0
+            ):
+                logger.info("HTTP: %s sin cuerpo y sin WWW-Authenticate", resp.status_code)
+        result = {
+            "estado": "Rechazado",
+            "http_status": resp.status_code,
+            "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
+    if isinstance(resp.status_code, int) and resp.status_code >= 400:
+        detalle = data if data is not None else text_body
+        result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
+        if isinstance(data, dict):
+            detalle_info = data.get("detalle") if isinstance(data.get("detalle"), dict) else data
+            for key in ("descripcionMsg", "observaciones"):
+                if key in detalle_info:
+                    result[key] = detalle_info[key]
+            err = _parse_error_response(result)
+            if err:
+                result["errores"] = err
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
+    result = data if data is not None else {"estado": "Recibido", "detalle": text_body}
+    print(json.dumps(result, ensure_ascii=False))
+    return result
+
+
+def _build_emisor_for_anulacion() -> dict:
+    negocio = _load_datos_negocio() or {}
+    nit = solo_digitos(negocio.get("nit", ""))
+    if len(nit) not in (9, 14):
+        raise ValueError("NIT del emisor inválido")
+
+    persona_juridica_emisor = _is_persona_juridica(negocio)
+    nombre_emisor = _choose_nombre(
+        persona_juridica_emisor,
+        250,
+        negocio,
+    )
+    if not nombre_emisor or len(nombre_emisor) < 3:
+        raise ValueError("Nombre del emisor inválido")
+
+    tipo_estable = str(negocio.get("tipoEstablecimiento") or "01").zfill(2)
+    if tipo_estable not in TIPO_ESTABLECIMIENTOS:
+        raise ValueError("tipoEstablecimiento del emisor inválido")
+
+    nom_estable_raw = negocio.get("nombreComercial")
+    if isinstance(nom_estable_raw, str) and nom_estable_raw.strip():
+        nom_estable = nom_estable_raw.strip()
+    else:
+        nom_estable = nombre_emisor
+    if not (3 <= len(nom_estable) <= 150):
+        raise ValueError("Nombre de establecimiento inválido")
+
+    cod_estable_mh_raw = negocio.get("codEstableMH")
+    cod_estable_mh = None
+    if cod_estable_mh_raw not in (None, ""):
+        cod_estable_mh = str(cod_estable_mh_raw).strip().zfill(4)
+        if len(cod_estable_mh) != 4:
+            raise ValueError("codEstableMH inválido")
+
+    cod_estable = str(negocio.get("codEstable") or "1").strip()
+    if not (1 <= len(cod_estable) <= 10):
+        raise ValueError("codEstable inválido")
+
+    cod_pv_mh_raw = negocio.get("codPuntoVentaMH")
+    cod_punto_venta_mh = None
+    if cod_pv_mh_raw not in (None, ""):
+        cod_punto_venta_mh = str(cod_pv_mh_raw).strip().zfill(4)
+        if len(cod_punto_venta_mh) != 4:
+            raise ValueError("codPuntoVentaMH inválido")
+
+    cod_punto_venta = str(negocio.get("codPuntoVenta") or "1").strip()
+    if not (1 <= len(cod_punto_venta) <= 15):
+        raise ValueError("codPuntoVenta inválido")
+
+    telefono = (negocio.get("telefono") or "").strip()
+    if not TEL_EMISOR_RE.fullmatch(telefono):
+        raise ValueError("Teléfono del emisor inválido")
+
+    correo = (negocio.get("correo") or "").strip()
+    if not (3 <= len(correo) <= 100 and EMAIL_RE.fullmatch(correo)):
+        raise ValueError("Correo del emisor inválido")
+
+    emisor = {
+        "nit": nit,
+        "nombre": nombre_emisor,
+        "tipoEstablecimiento": tipo_estable,
+        "nomEstablecimiento": nom_estable,
+        "codEstable": cod_estable,
+        "codPuntoVenta": cod_punto_venta,
+        "telefono": telefono,
+        "correo": correo,
+    }
+    if cod_estable_mh is not None:
+        emisor["codEstableMH"] = cod_estable_mh
+    if cod_punto_venta_mh is not None:
+        emisor["codPuntoVentaMH"] = cod_punto_venta_mh
+    return emisor
+
+
+def _fetch_sello_fse(db: DB | None, codigo: str, numero_control: str) -> str:
+    if db is None:
+        raise ValueError("Base de datos requerida para obtener sello de recepción del FSE")
+    db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+    db.ensure_column("dte_envios", "numero_control", "TEXT")
+    db.ensure_column("dte_envios", "respuesta", "TEXT")
+    row = None
+    codigo = (codigo or "").strip().upper()
+    numero_control = (numero_control or "").strip().upper()
+    try:
+        row = db.cursor.execute(
+            """
+            SELECT TRIM(sello) AS sello, respuesta
+              FROM dte_envios
+             WHERE UPPER(codigo_generacion)=?
+             ORDER BY id DESC LIMIT 1
+            """,
+            (codigo,),
+        ).fetchone()
+    except Exception:
+        row = None
+    if row is None and numero_control:
+        try:
+            row = db.cursor.execute(
+                """
+                SELECT TRIM(sello) AS sello, respuesta
+                  FROM dte_envios
+                 WHERE UPPER(numero_control)=?
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (numero_control,),
+            ).fetchone()
+        except Exception:
+            row = None
+    if row is None:
+        raise ValueError("No se encontró sello de recepción para el FSE")
+    if isinstance(row, dict):
+        sello_raw = row.get("sello")
+        resp_raw = row.get("respuesta")
+    else:
+        try:
+            sello_raw = row["sello"]
+            resp_raw = row["respuesta"]
+        except Exception:
+            sello_raw = row[0]
+            resp_raw = row[1] if len(row) > 1 else None
+    sello = str(sello_raw or "").strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        if isinstance(resp_raw, str):
+            try:
+                resp_json = json.loads(resp_raw)
+            except Exception:
+                resp_json = None
+            if isinstance(resp_json, dict):
+                sello_resp = (
+                    resp_json.get("selloRecibido")
+                    or resp_json.get("selloRecepcion")
+                    or resp_json.get("sello")
+                )
+                sello = str(sello_resp or "").strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        raise ValueError("No se encontró un sello de recepción válido para el FSE")
+    return sello
+
+
+def _build_fse_anulacion_json(
+    factura: dict, ui_motivo: dict, *, ambiente: str, db: DB | None = None
+) -> dict:
+    ident_orig = factura.get("identificacion") or {}
+    codigo_gen_raw = ident_orig.get("codigoGeneracion")
+    numero_control_raw = ident_orig.get("numeroControl")
+    fec_emi_raw = ident_orig.get("fecEmi") or ident_orig.get("fechaEmision") or ident_orig.get("fecha")
+    if not all([codigo_gen_raw, numero_control_raw, fec_emi_raw]):
+        raise ValueError("Factura FSE incompleta para anulación")
+    codigo_gen = str(codigo_gen_raw).strip().upper()
+    if not UUID36_RE.fullmatch(codigo_gen):
+        raise ValueError("codigoGeneracion del FSE inválido")
+    numero_control = str(numero_control_raw).strip().upper()
+    if not NUM_CONTROL_RE.fullmatch(numero_control):
+        raise ValueError("numeroControl del FSE inválido")
+    try:
+        fec_emi = datetime.strptime(str(fec_emi_raw)[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+    except Exception as exc:
+        raise ValueError("Fecha de emisión del FSE inválida") from exc
+
+    resumen = factura.get("resumen") or {}
+    monto_iva_raw = resumen.get("montoIva")
+    if monto_iva_raw is None:
+        monto_iva_raw = resumen.get("ivaRete1")
+    monto_iva_val = Decimal("0")
+    if monto_iva_raw is not None:
+        try:
+            monto_iva_val = Decimal(str(monto_iva_raw))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("montoIva inválido en FSE") from exc
+        if monto_iva_val < 0:
+            raise ValueError("montoIva de FSE no puede ser negativo")
+    try:
+        monto_iva_val = monto_iva_val.quantize(Decimal("0.01"))
+    except InvalidOperation as exc:
+        raise ValueError("montoIva inválido en FSE") from exc
+    monto_iva = float(monto_iva_val)
+
+    receptor = factura.get("sujetoExcluido") if factura.get("sujetoExcluido") else factura.get("receptor") or {}
+    if not isinstance(receptor, dict):
+        receptor = {}
+    nombre_rec = normalize_nombre(
+        receptor.get("nombre") or receptor.get("nombreComercial"),
+        max_length=200,
+    )
+    tip_doc_rec_raw = receptor.get("tipoDocumento") or receptor.get("tipoDocumentoIdentidad")
+    tip_doc_rec = str(tip_doc_rec_raw).zfill(2) if tip_doc_rec_raw not in (None, "") else None
+    if tip_doc_rec is None and receptor.get("nit"):
+        tip_doc_rec = "36"
+    num_doc_rec_raw = receptor.get("numDocumento") or receptor.get("nit")
+    if isinstance(num_doc_rec_raw, str):
+        num_doc_rec = num_doc_rec_raw.strip()
+    elif num_doc_rec_raw is None:
+        num_doc_rec = ""
+    else:
+        num_doc_rec = str(num_doc_rec_raw)
+    if not nombre_rec:
+        nombre_rec = normalize_nombre("Consumidor final", max_length=200)
+    if tip_doc_rec is None or tip_doc_rec not in TIPO_DOC_CAT22:
+        tip_doc_rec = "37"
+    if not (3 <= len(num_doc_rec) <= 20):
+        num_doc_rec = "CF"
+
+    def _val_persona(nombre, tip, num, *, sujeto: str):
+        nombre_val = (nombre or "").strip()
+        if not (5 <= len(nombre_val) <= 100):
+            raise ValueError(f"Nombre de {sujeto} inválido")
+
+        tip_val = str(tip or "").strip()
+        if tip_val:
+            tip_val = tip_val.zfill(2)
+            if tip_val == "00":
+                tip_val = None
+            elif tip_val not in TIPO_DOC_CAT22:
+                raise ValueError(f"Tipo de documento de {sujeto} inválido")
+        else:
+            tip_val = None
+
+        num_val = (num or "").strip()
+        if num_val:
+            if not (3 <= len(num_val) <= 20):
+                raise ValueError(f"Número de documento de {sujeto} inválido")
+        else:
+            num_val = None
+        if num_val is not None and tip_val is None:
+            raise ValueError(
+                f"Tipo de documento de {sujeto} requerido cuando se indica número"
+            )
+        return nombre_val, tip_val, num_val
+
+    tipo_raw = ui_motivo.get("tipoAnulacion")
+    try:
+        motivo_tipo = int(str(tipo_raw))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Tipo de anulación de FSE inválido") from exc
+    if motivo_tipo not in TIPO_ANULACION_VALIDOS:
+        raise ValueError("Tipo de anulación de FSE inválido")
+    motivo_desc = str(ui_motivo.get("motivoAnulacion") or "").strip()
+    if not motivo_desc or len(motivo_desc) < 5 or len(motivo_desc) > 300:
+        raise ValueError("Motivo de anulación de FSE inválido")
+
+    nombre_resp, tip_resp, num_resp = _val_persona(
+        ui_motivo.get("nombreResponsable"),
+        ui_motivo.get("tipDocResponsable"),
+        ui_motivo.get("numDocResponsable"),
+        sujeto="responsable",
+    )
+    nombre_sol, tip_sol, num_sol = _val_persona(
+        ui_motivo.get("nombreSolicita"),
+        ui_motivo.get("tipDocSolicita"),
+        ui_motivo.get("numDocSolicita"),
+        sujeto="solicitante",
+    )
+
+    codigo_generacion_r = None
+    if motivo_tipo != 2:
+        codigo_generacion_r_raw = ui_motivo.get("codigoGeneracionR")
+        if not isinstance(codigo_generacion_r_raw, str) or not codigo_generacion_r_raw.strip():
+            raise ValueError(
+                "Primero emite el DTE corregido y captura su código de generación (con sello). "
+                "Ingresa ese código en 'Documento que reemplaza'."
+            )
+        codigo_generacion_r = codigo_generacion_r_raw.strip().upper()
+        if not UUID36_RE.fullmatch(codigo_generacion_r):
+            raise ValueError(
+                "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones."
+            )
+        if codigo_generacion_r == codigo_gen:
+            raise ValueError(ERROR_REEMPLAZO_DISTINTO)
+        if db is not None:
+            metadata_reemplazo = _ensure_replacement_document(db, codigo_generacion_r)
+            tipo_reemplazo = metadata_reemplazo.get("tipo_dte")
+            if tipo_reemplazo and tipo_reemplazo != "14":
+                raise ValueError(ERROR_REEMPLAZO_TIPO)
+
+    sello_recibido = _fetch_sello_fse(db, codigo_gen, numero_control)
+
+    ambiente_val = normalize_ambiente(ambiente) or "00"
+    now = datetime.now(TZ_EL_SALVADOR)
+    identificacion = {
+        "version": 2,
+        "ambiente": ambiente_val,
+        "codigoGeneracion": codigo_gen,
+        "fecAnula": now.strftime("%Y-%m-%d"),
+        "horAnula": now.strftime("%H:%M:%S"),
+    }
+    documento = {
+        "tipoDte": "14",
+        "codigoGeneracion": codigo_gen,
+        "selloRecibido": sello_recibido,
+        "numeroControl": numero_control,
+        "fecEmi": fec_emi,
+        "montoIva": monto_iva,
+        "tipoDocumento": tip_doc_rec,
+        "numDocumento": num_doc_rec,
+        "nombre": nombre_rec,
+        "codigoGeneracionR": codigo_generacion_r,
+    }
+    tel_rec = receptor.get("telefono")
+    if tel_rec not in (None, ""):
+        documento["telefono"] = str(tel_rec).strip()
+    cor_rec = receptor.get("correo")
+    if cor_rec not in (None, ""):
+        documento["correo"] = str(cor_rec).strip()
+
+    emisor = _build_emisor_for_anulacion()
+    motivo = {
+        "tipoAnulacion": motivo_tipo,
+        "motivoAnulacion": motivo_desc,
+        "nombreResponsable": nombre_resp,
+        "tipDocResponsable": tip_resp,
+        "numDocResponsable": num_resp,
+        "nombreSolicita": nombre_sol,
+        "tipDocSolicita": tip_sol,
+        "numDocSolicita": num_sol,
+    }
+    payload = {
+        "identificacion": identificacion,
+        "documento": documento,
+        "emisor": emisor,
+        "motivo": motivo,
+    }
+    try:
+        logger.info(
+            "FSE anulacion – payload generado",
+            extra={
+                "tipo_dte_original": ident_orig.get("tipoDte"),
+                "codigo_generacion_original": ident_orig.get("codigoGeneracion"),
+                "anulacion_tipoDte": payload.get("documento", {}).get("tipoDte"),
+                "anulacion_version": payload.get("identificacion", {}).get("version"),
+                "anulacion_codigoGeneracion": payload.get("identificacion", {}).get("codigoGeneracion"),
+            },
+        )
+        logger.debug(
+            "FSE anulacion – JSON completo: %s",
+            stable_json.stable_stringify(payload),
+        )
+    except Exception:
+        logger.exception("FSE anulacion – fallo al registrar payload")
+    return payload
+
+def build_invalidacion_json(
+    factura: dict,
+    ui_motivo: dict,
+    *,
+    ambiente: str,
+    db: DB | None = None,
+    venta_id: int | None = None,
+) -> dict:
+    factura = prepare_factura_for_invalidacion(
+        factura,
+        db=db,
+        venta_id=venta_id,
+    )
+    ident = factura.get("identificacion") or {}
+    tipo_dte_raw = ident.get("tipoDte")
+    tipo_dte_str = str(tipo_dte_raw).zfill(2) if tipo_dte_raw is not None else ""
+    if tipo_dte_str == "14":
+        return _build_fse_anulacion_json(factura, ui_motivo, ambiente=ambiente, db=db)
+    codigo_gen_raw = ident.get("codigoGeneracion")
+    numero_control_raw = ident.get("numeroControl")
+    fec_emi = ident.get("fecEmi")
+    sello_raw = factura.get("selloRecibido")
+    if not all([codigo_gen_raw, numero_control_raw, fec_emi, sello_raw]):
+        raise ValueError("Factura incompleta para invalidación")
+
+    codigo_gen = str(codigo_gen_raw).strip().upper()
+    if not UUID36_RE.fullmatch(codigo_gen):
+        raise ValueError("codigoGeneracion de la factura inválido")
+    numero_control = str(numero_control_raw).strip().upper()
+    if not NUM_CONTROL_RE.fullmatch(numero_control):
+        raise ValueError("numeroControl de la factura inválido")
+    try:
+        datetime.strptime(str(fec_emi), "%Y-%m-%d")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Fecha de emisión del DTE inválida") from exc
+    sello = str(sello_raw).strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        raise ValueError(
+            "selloRecibido inválido; debe coincidir con el sello alfanumérico de 40 caracteres emitido por MH"
+        )
+
+    emisor = _build_emisor_for_anulacion()
+
+    receptor = factura.get("receptor") or {}
+    nombre_rec = normalize_nombre(receptor.get("nombre"), max_length=200)
+
+    tip_doc_rec_raw = receptor.get("tipoDocumento")
+    tip_doc_rec = None
+    if tip_doc_rec_raw not in (None, ""):
+        tip_doc_rec = str(tip_doc_rec_raw).zfill(2)
+    elif receptor.get("nit"):
+        tip_doc_rec = "36"
+
+    num_doc_rec_raw = receptor.get("numDocumento") or receptor.get("nit")
+    if isinstance(num_doc_rec_raw, str):
+        num_doc_rec = num_doc_rec_raw.strip()
+        if not num_doc_rec:
+            num_doc_rec = None
+    elif num_doc_rec_raw is None:
+        num_doc_rec = None
+    else:
+        num_doc_rec = str(num_doc_rec_raw)
+        if not num_doc_rec:
+            num_doc_rec = None
+
+    if not nombre_rec and tip_doc_rec is None and num_doc_rec is None:
+        nombre_rec = normalize_nombre("Consumidor final", max_length=200)
+        tip_doc_rec = "37"
+        num_doc_rec = "CF"
+
+    if not nombre_rec or len(nombre_rec) < 5:
+        raise ValueError("Nombre del receptor inválido")
+
+    if tip_doc_rec is not None and tip_doc_rec not in TIPO_DOC_CAT22:
+        raise ValueError("Tipo de documento del receptor inválido")
+
+    if num_doc_rec is not None:
+        if not (2 <= len(num_doc_rec) <= 20):
+            raise ValueError("Número de documento del receptor inválido")
+        if len(num_doc_rec) < 3 and not (tip_doc_rec == "37" and num_doc_rec.upper() == "CF"):
+            raise ValueError("Número de documento del receptor inválido")
+
+    tel_rec_raw = receptor.get("telefono")
+    tel_rec = None
+    if tel_rec_raw not in (None, ""):
+        tel_rec = str(tel_rec_raw).strip()
+        if not TEL_RECEPTOR_RE.fullmatch(tel_rec):
+            raise ValueError("Teléfono del receptor inválido")
+
+    cor_rec_raw = receptor.get("correo")
+    cor_rec = None
+    if cor_rec_raw not in (None, ""):
+        cor_rec = str(cor_rec_raw).strip()
+        if len(cor_rec) > 100 or not EMAIL_RE.fullmatch(cor_rec):
+            raise ValueError("Correo del receptor inválido")
+
+    resumen = factura.get("resumen") or {}
+    monto_iva_decimal = None
+    tributos_raw = resumen.get("tributos")
+    if tributos_raw in (None, []):
+        tributos_list = []
+    elif isinstance(tributos_raw, list):
+        tributos_list = tributos_raw
+    else:
+        raise ValueError("Estructura de tributos inválida en el DTE original")
+    if tributos_list:
+        iva_sum = Decimal("0")
+        iva_encontrado = False
+        for trib in tributos_list:
+
+            if trib.get("codigo") == TRIBUTO_IVA:
+                valor = trib.get("valor")
+                if valor is None:
+                    continue
+                try:
+                    iva_sum += Decimal(str(valor))
+                except (InvalidOperation, TypeError, ValueError) as exc:
+                    raise ValueError("montoIva inválido") from exc
+                iva_encontrado = True
+        if iva_encontrado:
+            monto_iva_decimal = iva_sum
+
+    if monto_iva_decimal is None:
+        total_iva = resumen.get("totalIva")
+        if total_iva is not None:
+            try:
+                monto_iva_decimal = Decimal(str(total_iva))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError("montoIva inválido") from exc
+    monto_iva_val = None
+    if monto_iva_decimal is not None:
+        if monto_iva_decimal < 0:
+            raise ValueError("montoIva no puede ser negativo")
+        try:
+            monto_iva_decimal = monto_iva_decimal.quantize(Decimal("0.01"))
+        except InvalidOperation as exc:
+            raise ValueError("montoIva inválido") from exc
+        monto_iva_val = float(monto_iva_decimal)
+
+    if tipo_dte_str not in TIPO_DTE_VALIDOS:
+        raise ValueError("tipoDte inválido")
+
+    tipo_anulacion_raw = ui_motivo.get("tipoAnulacion")
+    try:
+        tipo_anulacion = int(tipo_anulacion_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("tipoAnulacion inválido") from exc
+    if tipo_anulacion not in TIPO_ANULACION_VALIDOS:
+        raise ValueError("tipoAnulacion inválido")
+
+    motivo_raw = ui_motivo.get("motivoAnulacion")
+    if isinstance(motivo_raw, str):
+        motivo_val = motivo_raw.strip()
+        if not motivo_val:
+            motivo_val = None
+    elif motivo_raw is None:
+        motivo_val = None
+    else:
+        raise ValueError("motivoAnulacion inválido")
+
+    if tipo_anulacion == 3:
+        if not motivo_val or not (5 <= len(motivo_val) <= 250):
+            raise ValueError("motivoAnulacion requerido cuando tipoAnulacion es 3")
+    elif motivo_val is not None and not (5 <= len(motivo_val) <= 250):
+        raise ValueError("motivoAnulacion inválido")
+
+    codigo_generacion_r = None
+    if tipo_anulacion == 2:
+        codigo_generacion_r = None
+    else:
+        codigo_generacion_r_raw = ui_motivo.get("codigoGeneracionR")
+        if not isinstance(codigo_generacion_r_raw, str) or not codigo_generacion_r_raw.strip():
+            raise ValueError(
+                "Primero emite el DTE corregido y captura su código de generación (con sello). "
+                "Ingresa ese código en 'Documento que reemplaza'."
+            )
+        codigo_generacion_r = codigo_generacion_r_raw.strip().upper()
+        if not UUID36_RE.fullmatch(codigo_generacion_r):
+            raise ValueError(
+                "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones."
+            )
+        if codigo_generacion_r == codigo_gen:
+            raise ValueError(ERROR_REEMPLAZO_DISTINTO)
+        reemplazo = _ensure_replacement_document(db, codigo_generacion_r)
+        tipo_reemplazo = reemplazo.get("tipo_dte")
+        if tipo_reemplazo != tipo_dte_str:
+            raise ValueError(ERROR_REEMPLAZO_TIPO)
+
+        emisor_original_doc = None
+        emisor_factura = factura.get("emisor") or {}
+        for key in ("nit", "numDocumento", "nrc", "dui"):
+            val = emisor_factura.get(key)
+            if val:
+                emisor_original_doc = str(val)
+                break
+        emisor_original_norm = _normalize_documento_id(emisor_original_doc)
+        emisor_reemplazo_norm = _normalize_documento_id(
+            reemplazo.get("emisor_documento")
+        )
+        if emisor_original_norm and emisor_reemplazo_norm:
+            if emisor_original_norm != emisor_reemplazo_norm:
+                raise ValueError(ERROR_REEMPLAZO_EMISOR)
+        elif emisor_original_norm:
+            raise ValueError(ERROR_REEMPLAZO_EMISOR)
+
+        fecha_reemplazo = reemplazo.get("fecha_emision")
+        if fecha_reemplazo:
+            try:
+                fecha_reemplazo_dt = datetime.strptime(str(fecha_reemplazo)[:10], "%Y-%m-%d")
+                fecha_original_dt = datetime.strptime(str(fec_emi), "%Y-%m-%d")
+            except Exception:
+                fecha_reemplazo_dt = None
+                fecha_original_dt = None
+            if (
+                fecha_reemplazo_dt is not None
+                and fecha_original_dt is not None
+                and fecha_reemplazo_dt < fecha_original_dt
+            ):
+                raise ValueError(ERROR_REEMPLAZO_FECHA)
+
+    def _val_persona(nombre, tip, num, *, sujeto: str):
+        nombre_val = (nombre or "").strip()
+        if not (5 <= len(nombre_val) <= 100):
+            raise ValueError(f"Nombre de {sujeto} inválido")
+
+        tip_val = str(tip or "").strip()
+        if tip_val:
+            tip_val = tip_val.zfill(2)
+            if tip_val == "00":
+                tip_val = None
+            elif tip_val not in TIPO_DOC_CAT22:
+                raise ValueError(f"Tipo de documento de {sujeto} inválido")
+        else:
+            tip_val = None
+
+        num_val = (num or "").strip()
+        if num_val:
+            if not (3 <= len(num_val) <= 20):
+                raise ValueError(f"Número de documento de {sujeto} inválido")
+        else:
+            num_val = None
+        if num_val is not None and tip_val is None:
+            raise ValueError(
+                f"Tipo de documento de {sujeto} requerido cuando se indica número"
+            )
+        return nombre_val, tip_val, num_val
+
+    nombre_resp, tip_resp, num_resp = _val_persona(
+        ui_motivo.get("nombreResponsable"),
+        ui_motivo.get("tipDocResponsable"),
+        ui_motivo.get("numDocResponsable"),
+        sujeto="responsable",
+    )
+    nombre_sol, tip_sol, num_sol = _val_persona(
+        ui_motivo.get("nombreSolicita"),
+        ui_motivo.get("tipDocSolicita"),
+        ui_motivo.get("numDocSolicita"),
+        sujeto="solicitante",
+    )
+
+    now = datetime.now(TZ_EL_SALVADOR)
+    identificacion = {
+        "version": 2,
+        "ambiente": "01" if str(ambiente).startswith("01") else "00",
+        "codigoGeneracion": str(uuid.uuid4()).upper(),
+        "fecAnula": now.strftime("%Y-%m-%d"),
+        "horAnula": now.strftime("%H:%M:%S"),
+    }
+
+    documento = {
+        "tipoDte": tipo_dte_str,
+        "codigoGeneracion": codigo_gen,
+        "selloRecibido": sello,
+        "numeroControl": numero_control,
+        "fecEmi": str(fec_emi),
+        "montoIva": monto_iva_val,
+        "codigoGeneracionR": codigo_generacion_r,
+        "tipoDocumento": tip_doc_rec,
+        "numDocumento": num_doc_rec,
+        "nombre": nombre_rec,
+    }
+    if tel_rec is not None:
+        documento["telefono"] = tel_rec
+    if cor_rec is not None:
+        documento["correo"] = cor_rec
+
+    motivo_section = {
+        "tipoAnulacion": tipo_anulacion,
+        "motivoAnulacion": motivo_val,
+        "nombreResponsable": nombre_resp,
+        "tipDocResponsable": tip_resp,
+        "numDocResponsable": num_resp,
+        "nombreSolicita": nombre_sol,
+        "tipDocSolicita": tip_sol,
+        "numDocSolicita": num_sol,
+    }
+
+    return {
+        "identificacion": identificacion,
+        "emisor": emisor,
+        "documento": documento,
+        "motivo": motivo_section,
+    }
+
+
+def enviar_invalidacion(db: DB, data: dict) -> dict:
+    config = _load_dte_api_config()
+    pu = urlparse(config["url"])
+    url = f"{pu.scheme}://{pu.netloc}/fesv/anulardte"
+    codigo_generacion = None
+    target_dir = None
+    if isinstance(data, dict):
+        ident = data.get("identificacion")
+        if isinstance(ident, dict):
+            raw_codigo = ident.get("codigoGeneracion")
+            if raw_codigo:
+                codigo_generacion = str(raw_codigo).strip()
+    if codigo_generacion:
+        base_dir = os.fspath(
+            ensure_user_dir("dtes", "actualizaciones", "anulacion")
+        )
+        target_dir = os.path.join(base_dir, codigo_generacion)
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except Exception:
+            logger.exception(
+                "No se pudo crear el directorio para el evento de anulación %s",
+                codigo_generacion,
+            )
+            target_dir = None
+    metadata_kwargs: dict[str, object] = {}
+    if target_dir and isinstance(data, dict):
+        try:
+            json_path = os.path.join(target_dir, "documento.json")
+            stable_json.save_file(
+                json_path, stable_json.stable_stringify(data, indent=2)
+            )
+            metadata_kwargs["json_path"] = json_path
+        except Exception:
+            logger.exception(
+                "No se pudo guardar el evento de anulación %s",
+                codigo_generacion or "",
+            )
+        documento = data.get("documento") if isinstance(data, dict) else None
+        codigo_dte = None
+        if isinstance(documento, dict):
+            codigo_dte_raw = documento.get("codigoGeneracion")
+            if isinstance(codigo_dte_raw, str):
+                codigo_dte = codigo_dte_raw.strip().upper() or None
+        dte_json_path = None
+        if codigo_dte:
+            try:
+                version_dir = resolve_version_dir(None, codigo_dte)
+            except Exception:
+                version_dir = None
+            if version_dir:
+                candidate = os.path.join(version_dir, "documento.json")
+                if os.path.exists(candidate):
+                    dte_json_path = candidate
+        metadata_kwargs["codigo_dte"] = codigo_dte
+        metadata_kwargs["dte_json_path"] = dte_json_path
+        _persist_anulacion_metadata(
+            target_dir,
+            data,
+            json_path=metadata_kwargs.get("json_path"),
+            codigo_dte=codigo_dte,
+            dte_json_path=dte_json_path,
+        )
+    ambiente_cfg = config.get("ambiente")
+    _quick_invalidacion_checks(data, ambiente_raiz=ambiente_cfg, db=db)
+    respuesta = _post_invalidacion(
+        url,
+        data,
+        ambiente_config=ambiente_cfg,
+    )
+    sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
+    estado = (
+        respuesta.get("estado")
+        or respuesta.get("estadoEvento")
+        or respuesta.get("descripcionEstado")
+        or "Transmitido"
+    )
+    detalle = respuesta.get("detalle")
+    res = {"estado": estado, "sello": sello}
+    if detalle:
+        res["detalle"] = detalle
+    if respuesta.get("errores"):
+        res["errores"] = respuesta["errores"]
+    if target_dir:
+        try:
+            _persist_anulacion_metadata(
+                target_dir,
+                data,
+                json_path=metadata_kwargs.get("json_path"),
+                codigo_dte=metadata_kwargs.get("codigo_dte"),
+                dte_json_path=metadata_kwargs.get("dte_json_path"),
+                respuesta=respuesta,
+            )
+        except Exception:
+            logger.exception(
+                "No se pudo actualizar los metadatos del evento de anulación %s",
+                codigo_generacion or "",
+            )
+    return res
+
+
+def _is_fse_anulacion_payload(evento: dict | None) -> bool:
+    """Detecta el esquema especial de anulación para FSE."""
+    if not isinstance(evento, dict):
+        return False
+    documento = evento.get("documento")
+    if isinstance(documento, dict):
+        tipo_doc = str(documento.get("tipoDte") or documento.get("tipoDTE") or "").zfill(2)
+        if tipo_doc == "14":
+            return True
+    ident = evento.get("identificacion") or {}
+    if isinstance(ident, dict):
+        tipo_ident = str(ident.get("tipoDte") or ident.get("tipoDTE") or "").zfill(2)
+        if tipo_ident == "14":
+            return True
+    return False
+
+
+def _validate_fse_anulacion(evento: dict, *, ambiente_raiz: str | None = None) -> None:
+    if not isinstance(evento, dict):
+        raise ValueError("Evento de anulación inválido")
+    ident = evento.get("identificacion") or {}
+    if not isinstance(ident, dict):
+        raise ValueError("Evento de anulación sin identificación")
+    version = ident.get("version")
+    if str(version) != "2":
+        raise ValueError("La invalidación debe usar identificacion.version = 2")
+    ambiente_evento = normalize_ambiente(ident.get("ambiente"))
+    if ambiente_evento is None:
+        raise ValueError("Ambiente de la anulación no determinado")
+    if ambiente_raiz is not None:
+        ambiente_raiz_norm = normalize_ambiente(ambiente_raiz)
+        if ambiente_raiz_norm and ambiente_evento != ambiente_raiz_norm:
+            raise ValueError("El ambiente del evento no coincide con el del envío")
+    for key in ("codigoGeneracion", "fecAnula", "horAnula"):
+        val = ident.get(key)
+        if val in (None, ""):
+            raise ValueError(f"{key} de identificacion requerido para FSE")
+    documento = evento.get("documento")
+    if not isinstance(documento, dict):
+        raise ValueError("documento requerido para anulación de FSE")
+    if evento.get("documentoRelacionado") not in (None, [], {}):
+        raise ValueError("documentoRelacionado no permitido para anulación de FSE")
+    tipo_dte = str(documento.get("tipoDte") or "").zfill(2)
+    if tipo_dte != "14":
+        raise ValueError("documento.tipoDte=14 requerido para anulación de FSE")
+    for key in ("codigoGeneracion", "selloRecibido", "numeroControl", "fecEmi"):
+        val = documento.get(key)
+        if val in (None, ""):
+            raise ValueError(f"{key} de documento requerido para FSE")
+    motivo = evento.get("motivo")
+    if not isinstance(motivo, dict):
+        raise ValueError("Motivo de anulación de FSE requerido")
+    for field in (
+        "tipoAnulacion",
+        "motivoAnulacion",
+        "nombreResponsable",
+        "tipDocResponsable",
+        "numDocResponsable",
+    ):
+        if motivo.get(field) in (None, ""):
+            raise ValueError(f"{field} requerido para FSE")

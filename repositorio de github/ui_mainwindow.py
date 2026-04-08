@@ -40,7 +40,6 @@ from dialogs import (
 
 from sales_tab import SalesTab
 from facturacion_tab import FacturacionTab
-from analytics_predictive.presentation import PredictiveAnalyticsTab
 from datetime import datetime, date, timedelta
 
 from num2words import num2words  # Instala las dependencias con: pip install -r requirements.txt
@@ -2551,21 +2550,6 @@ class MainWindow(QMainWindow):
         self.estados_cuenta_tab = self.setup_estados_cuenta_ui()
         self.tabs.addTab(self.estados_cuenta_tab, "Estados de cuenta")
 
-        # --- PESTAÑA DE ANALITICA PREDICTIVA ---
-        try:
-            self.analitica_predictiva_tab = PredictiveAnalyticsTab(self.manager, self)
-        except Exception as exc:
-            logger.exception("No se pudo inicializar la pestana de analitica predictiva: %s", exc)
-            fallback = QWidget(self)
-            fallback_layout = QVBoxLayout(fallback)
-            fallback_layout.addWidget(
-                QLabel("Analitica predictiva no disponible temporalmente.")
-            )
-            fallback_layout.addStretch(1)
-            self.analitica_predictiva_tab = fallback
-        self.analitica_predictiva_tab.setObjectName("AnaliticaPredictiva")
-        self.tabs.addTab(self.analitica_predictiva_tab, "Analitica predictiva")
-
         # Siempre iniciar en la pestaña de inicio (Inventario)
         self._reset_tabs_to_default_order()
         inicio_index = self._find_tab_index("Inicio")
@@ -2582,12 +2566,11 @@ class MainWindow(QMainWindow):
             ("Facturacion", "btn_nav_facturacion", 6),
             ("Trabajadores", "btn_nav_trabajadores", 7),
             ("Estados de cuenta", "btn_nav_estado_cuenta", 8),
-            ("Analitica predictiva", "btn_nav_analitica", 9),
         ]
         bottom_items = [
-            ("Guardar rápido", "btn_nav_guardar", 10),
-            ("Configuración", "btn_nav_config", 11),
-            ("Cerrar Sesión", "btn_nav_logout", 12),
+            ("Guardar rápido", "btn_nav_guardar", 9),
+            ("Configuración", "btn_nav_config", 10),
+            ("Cerrar Sesión", "btn_nav_logout", 11),
         ]
         self.sidebar = ModernSidebar(nav_items, bottom_items, self)
         self.sidebar.connect_to_index_change(self.tabs.setCurrentIndex)
@@ -6612,7 +6595,6 @@ class MainWindow(QMainWindow):
             "Facturacion",
             "Trabajadores",
             "Estados de cuenta",
-            "Analitica predictiva",
         ]
         for desired_index, title in enumerate(canonical):
             idx = self._find_tab_index(title)

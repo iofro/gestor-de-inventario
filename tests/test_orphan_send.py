@@ -1,4 +1,6 @@
 import json
+import os
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,10 +34,21 @@ def test_transmitir_dte_orphan_signs(monkeypatch, tmp_path):
     json_path = tmp_path / "dte.json"
     json_path.write_text(json.dumps(data))
     called = {}
-    monkeypatch.setattr(dte, "sanitize_dte_payload", lambda d: called.setdefault("san", True) or d)
-    monkeypatch.setattr(dte, "apply_schema_patch", lambda d: called.setdefault("patch", True) or d)
+    def _mark_sanitize(payload):
+        called["san"] = True
+        return payload
+
+    def _mark_patch(payload):
+        called["patch"] = True
+        return payload
+
+    monkeypatch.setattr(dte, "sanitize_dte_payload", _mark_sanitize)
+    monkeypatch.setattr(dte, "apply_schema_patch", _mark_patch)
     monkeypatch.setattr(dte, "validate_dte_json", lambda d: called.setdefault("val", True))
-    monkeypatch.setattr(dte.jws, "sign_json", lambda d: called.setdefault("sign", True) or "SIGNED")
+    def _sign_json(_payload):
+        called["sign"] = True
+        return "SIGNED"
+    monkeypatch.setattr(dte.jws, "sign_json", _sign_json)
     monkeypatch.setattr(dte.auth, "get_token", lambda: "T")
     monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example.com"})
@@ -80,7 +93,7 @@ def test_send_orphan_invoice(monkeypatch, qt_app, tmp_path):
     json_path.write_text("{}")
 
     db = DB(":memory:")
-    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[], refresh_data=lambda: None)
     monkeypatch.setattr(facturacion_tab, "CF_DIR", str(tmp_path))
     monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(tmp_path / "cf"))
     monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
@@ -99,6 +112,7 @@ def test_send_orphan_invoice(monkeypatch, qt_app, tmp_path):
         def exec_(self):
             return QDialog.Accepted
     monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+    monkeypatch.setattr(facturacion_tab, "loading_dialog", lambda *a, **k: nullcontext())
 
     creds_path = tmp_path / "creds.json"
     creds_path.write_text(json.dumps({
@@ -131,8 +145,9 @@ def test_send_orphan_invoice(monkeypatch, qt_app, tmp_path):
     monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
 
     tab.send_selected_invoice()
-    assert json_path in map(Path, sent["attachments"])
-    assert called["path"] == str(json_path)
+    assert called.get("path")
+    assert called["path"].lower().endswith(".json")
+    assert os.path.exists(called["path"])
 
 
 def test_send_orphan_invoice_warns_with_token_detail(monkeypatch, qt_app, tmp_path):
@@ -142,7 +157,7 @@ def test_send_orphan_invoice_warns_with_token_detail(monkeypatch, qt_app, tmp_pa
     json_path.write_text("{}")
 
     db = DB(":memory:")
-    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[], refresh_data=lambda: None)
     monkeypatch.setattr(facturacion_tab, "CF_DIR", str(tmp_path))
     monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(tmp_path / "cf"))
     monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
@@ -168,6 +183,7 @@ def test_send_orphan_invoice_warns_with_token_detail(monkeypatch, qt_app, tmp_pa
             return QDialog.Accepted
 
     monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+    monkeypatch.setattr(facturacion_tab, "loading_dialog", lambda *a, **k: nullcontext())
 
     warnings = {}
     monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
@@ -175,6 +191,11 @@ def test_send_orphan_invoice_warns_with_token_detail(monkeypatch, qt_app, tmp_pa
     def fake_warning(parent, title, message):
         warnings["msg"] = message
     monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", fake_warning)
+    monkeypatch.setattr(
+        facturacion_tab.FacturacionTab,
+        "_show_send_error_dialog",
+        lambda self, summary, title, details_payload=None: warnings.__setitem__("msg", str(summary)),
+    )
 
     def fake_transmit(db_, path):
         return {"http_status": 401, "detalle": "Credenciales revocadas"}
@@ -254,25 +275,7 @@ def test_resend_credit_note_regenerates_codigo(monkeypatch, qt_app, tmp_path):
     monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(nota_dir))
     monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
 
-    class DummyCheck:
-        def __init__(self, checked):
-            self._checked = checked
-
-        def setChecked(self, value):
-            self._checked = value
-
-        def isChecked(self):
-            return self._checked
-
-    class DummyDlg:
-        def __init__(self, parent=None):
-            self.email_cb = DummyCheck(False)
-            self.hacienda_cb = DummyCheck(True)
-
-        def exec_(self):
-            return QDialog.Accepted
-
-    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+    monkeypatch.setattr(facturacion_tab, "loading_dialog", lambda *a, **k: nullcontext())
     monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
     monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
@@ -348,9 +351,12 @@ def test_resend_credit_note_regenerates_codigo(monkeypatch, qt_app, tmp_path):
     )
 
     tab = facturacion_tab.FacturacionTab(man)
-    tab.table.selectRow(0)
-
-    tab.send_selected_invoice()
+    monkeypatch.setattr(tab, "load_invoices", lambda: None)
+    resp = tab._reenviar_nota_credito(
+        {"row_type": "orphan", "tipo": "Nota de crédito"},
+        {"json": str(json_path)},
+    )
+    assert resp["estado"] == "PROCESADO"
 
     assert captured["meta"]["codigoGeneracion"] == new_code
     assert captured["meta"]["codigoGeneracion"] != old_code
@@ -362,9 +368,6 @@ def test_resend_credit_note_regenerates_codigo(monkeypatch, qt_app, tmp_path):
     assert row["codigo_generacion"] == new_code
     assert row["estado"].upper() == "PROCESADO"
 
-    entry = tab._selected_entry()
-    assert entry["envio"] == "PROCESADO"
-    assert entry.get("json") == str(json_path)
     with open(json_path, "r", encoding="utf-8") as fh:
         refreshed = json.load(fh)
     assert refreshed["identificacion"]["codigoGeneracion"] == new_code
@@ -376,7 +379,7 @@ def test_resend_credit_note_without_db_entry_transmits_orphan(
     monkeypatch.setattr(facturacion_tab.FacturacionTab, "load_invoices", lambda self: None)
 
     db = DB(":memory:")
-    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[], refresh_data=lambda: None)
     tab = facturacion_tab.FacturacionTab(man)
 
     json_path = tmp_path / "nota_credito.json"

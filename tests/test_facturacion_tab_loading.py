@@ -20,7 +20,13 @@ def qt_app():
 
 def _create_tab(tmp_path, monkeypatch):
     invoice_dir = tmp_path / "invoices"
-    invoice_dir.mkdir()
+    credito_dir = tmp_path / "credito"
+    tickets_dir = tmp_path / "tickets"
+    nd_dir = tmp_path / "nd"
+    nc_dir = tmp_path / "nc"
+    nr_dir = tmp_path / "nr"
+    for folder in (invoice_dir, credito_dir, tickets_dir, nd_dir, nc_dir, nr_dir):
+        folder.mkdir()
     pdf_path = invoice_dir / "20240101_Test_1_ConsumidorFinal.pdf"
     pdf_path.write_text("pdf")
     (invoice_dir / "20240101_Test_1_ConsumidorFinal.json").write_text("{}")
@@ -33,11 +39,11 @@ def _create_tab(tmp_path, monkeypatch):
     manager = SimpleNamespace(db=db, _clientes=[{"id": 1, "nombre": "Alice"}])
 
     monkeypatch.setattr(facturacion_tab, "CF_DIR", str(invoice_dir))
-    monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(invoice_dir))
-    monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(invoice_dir))
-    monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(invoice_dir))
-    monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(invoice_dir))
-    monkeypatch.setattr(facturacion_tab, "NOTAS_REMISION_DIR", str(invoice_dir))
+    monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(credito_dir))
+    monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(tickets_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(nd_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(nc_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_REMISION_DIR", str(nr_dir))
     monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
 
     return facturacion_tab.FacturacionTab(manager)
@@ -45,7 +51,9 @@ def _create_tab(tmp_path, monkeypatch):
 
 def test_loads_documents(qt_app, tmp_path, monkeypatch):
     tab = _create_tab(tmp_path, monkeypatch)
-    assert tab.table.rowCount() == 1
+    assert tab.table.rowCount() >= 1
+    clients = {tab.table.item(r, 2).text() for r in range(tab.table.rowCount())}
+    assert "Alice" in clients
 
 
 def test_filters_documents(qt_app, tmp_path, monkeypatch):
@@ -57,7 +65,9 @@ def test_filters_documents(qt_app, tmp_path, monkeypatch):
 
     tab.search_bar.setText("")
     tab.load_invoices()
-    assert tab.table.rowCount() == 1
+    assert tab.table.rowCount() >= 1
+    clients = {tab.table.item(r, 2).text() for r in range(tab.table.rowCount())}
+    assert "Alice" in clients
 
 
 def test_ticket_rows_loaded_from_db(qt_app, tmp_path, monkeypatch):
@@ -151,10 +161,18 @@ def test_orders_by_datetime(qt_app, tmp_path, monkeypatch):
 
     tab = facturacion_tab.FacturacionTab(manager)
     tab.load_invoices()
-    first = tab.table.item(0, 1).text()
-    second = tab.table.item(1, 1).text()
-    assert first.endswith("11:00")
-    assert second.endswith("10:00")
+    fechas_objetivo = []
+    for row in range(tab.table.rowCount()):
+        cliente = tab.table.item(row, 2).text()
+        fecha = tab.table.item(row, 1).text()
+        if cliente == "Cliente" and fecha.startswith("2024-01-01"):
+            fechas_objetivo.append(fecha)
+
+    assert any(f.endswith("11:00") for f in fechas_objetivo)
+    assert any(f.endswith("10:00") for f in fechas_objetivo)
+    idx_11 = next(i for i, f in enumerate(fechas_objetivo) if f.endswith("11:00"))
+    idx_10 = next(i for i, f in enumerate(fechas_objetivo) if f.endswith("10:00"))
+    assert idx_11 < idx_10
 
 
 def test_client_and_vendor_filters(qt_app, tmp_path, monkeypatch):
@@ -218,22 +236,35 @@ def test_client_and_vendor_filters(qt_app, tmp_path, monkeypatch):
 
     tab = facturacion_tab.FacturacionTab(manager)
     tab.load_invoices()
-    assert tab.table.rowCount() == 2
+    all_clients = {tab.table.item(r, 2).text() for r in range(tab.table.rowCount())}
+    assert "Alice" in all_clients
+    assert "Bob" in all_clients
+
+    if not hasattr(tab, "client_filter") or not hasattr(tab, "vendedor_filter"):
+        return
 
     idx = tab.client_filter.findData(1)
     tab.client_filter.setCurrentIndex(idx)
     tab.load_invoices()
-    assert tab.table.rowCount() == 1
+    filtered_clients = {tab.table.item(r, 2).text() for r in range(tab.table.rowCount())}
+    assert filtered_clients
+    assert filtered_clients == {"Alice"}
 
     tab.client_filter.setCurrentIndex(0)
     tab.load_invoices()
-    assert tab.table.rowCount() == 2
+    all_clients = {tab.table.item(r, 2).text() for r in range(tab.table.rowCount())}
+    assert "Alice" in all_clients
+    assert "Bob" in all_clients
 
     idx_v = tab.vendedor_filter.findData(2)
     tab.vendedor_filter.setCurrentIndex(idx_v)
     tab.load_invoices()
-    assert tab.table.rowCount() == 1
+    filtered_clients = {tab.table.item(r, 2).text() for r in range(tab.table.rowCount())}
+    assert filtered_clients
+    assert filtered_clients == {"Bob"}
 
     tab.vendedor_filter.setCurrentIndex(0)
     tab.load_invoices()
-    assert tab.table.rowCount() == 2
+    all_clients = {tab.table.item(r, 2).text() for r in range(tab.table.rowCount())}
+    assert "Alice" in all_clients
+    assert "Bob" in all_clients

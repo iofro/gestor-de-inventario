@@ -6480,31 +6480,7 @@ class FacturacionTab(QWidget):
                         ),
                     )
                     return
-                codigo_generacion = None
-                sello_resp = None
-                if mh_response:
-                    ident = (
-                        mh_response.get("identificacion")
-                        or mh_response.get("identificador")
-                        or {}
-                    )
-                    codigo_generacion = (
-                        (ident.get("codigoGeneracion") or "").strip().upper()
-                        or None
-                    )
-                    sello_resp = (
-                        mh_response.get("sello")
-                        or mh_response.get("selloRecibido")
-                        or mh_response.get("selloRecepcion")
-                    )
-                    if sello_resp:
-                        sello_resp = str(sello_resp).strip()
-                self._send_orphan_email(
-                    entry,
-                    force_regenerate=bool(send_hacienda and mh_success),
-                    expected_codigo=codigo_generacion,
-                    expected_sello=sello_resp,
-                )
+                self._send_orphan_email(entry)
         finally:
             self._set_send_in_progress(False)
 
@@ -9197,14 +9173,7 @@ class FacturacionTab(QWidget):
                     return codigo_norm.upper()
         return ""
 
-    def _send_orphan_email(
-        self,
-        entry,
-        *,
-        force_regenerate: bool = False,
-        expected_codigo: str | None = None,
-        expected_sello: str | None = None,
-    ):
+    def _send_orphan_email(self, entry):
         json_path = entry.get("json") if isinstance(entry, dict) else None
         pdf_path = entry.get("pdf") if isinstance(entry, dict) else None
         default_email = ""
@@ -9249,65 +9218,6 @@ class FacturacionTab(QWidget):
         if not json_path or not os.path.exists(json_path):
             QMessageBox.warning(self, "Enviar por correo", "No se encontró el JSON.")
             return
-
-        codigo_meta = (expected_codigo or "").strip().upper()
-        sello_meta = (expected_sello or "").strip()
-        if codigo_meta or sello_meta:
-            codigo_meta, sello_meta = self._ensure_invoice_json_metadata(
-                json_path,
-                codigo=codigo_meta or None,
-                sello=sello_meta or None,
-            )
-
-        if force_regenerate or not (pdf_path and os.path.exists(pdf_path)):
-            regenerated_pdf = self._build_invoice_pdf_from_json(
-                {
-                    "json": json_path,
-                    "pdf": pdf_path,
-                    "tipo": entry.get("tipo") if isinstance(entry, dict) else None,
-                },
-                base_pdf_path=pdf_path,
-            )
-            if regenerated_pdf:
-                pdf_path = regenerated_pdf
-
-        try:
-            with open(json_path, "r", encoding="utf-8") as fh:
-                payload = json.load(fh)
-        except Exception:
-            payload = {}
-
-        codigo_json = self._extract_codigo_generacion_from_payload(payload)
-        sello_json = (
-            payload.get("selloRecibido")
-            or payload.get("sello")
-            or payload.get("selloRecepcion")
-            or ""
-        )
-        sello_json = str(sello_json).strip()
-
-        if codigo_meta and codigo_json != codigo_meta:
-            QMessageBox.warning(
-                self,
-                "Enviar por correo",
-                "El JSON firmado no coincide con el código de generación aceptado por Hacienda.",
-            )
-            return
-        if sello_meta and sello_json.upper() != sello_meta.upper():
-            QMessageBox.warning(
-                self,
-                "Enviar por correo",
-                "El sello del documento no coincide con el recibido de Hacienda.",
-            )
-            return
-        if not sello_json:
-            QMessageBox.warning(
-                self,
-                "Enviar por correo",
-                "El documento no contiene sello de recepción de Hacienda.",
-            )
-            return
-
         attachments = [json_path]
         if pdf_path and os.path.exists(pdf_path):
             attachments.insert(0, pdf_path)
@@ -9592,26 +9502,22 @@ class FacturacionTab(QWidget):
             return
         json_path = factura.get("json")
         venta_id = factura.get("venta_id")
-        raw_payload, normalized_payload = self._load_payload_from_json(json_path)
-        if not isinstance(normalized_payload, Mapping):
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
             QMessageBox.warning(self, "Nota", "No se pudo leer la factura")
             return
-        data = dict(normalized_payload)
         if not venta_id:
-            logger.info(
-                "Nota %s sobre factura huérfana: se usará JSON fuente (%s)",
-                tipo,
-                json_path,
-            )
+            QMessageBox.warning(self, "Nota", "Factura sin venta asociada")
+            logger.warning("Nota %s abortada: factura sin venta_id json=%s", tipo, json_path)
+            return
 
         snapshot_payload = None
         if venta_id:
-            snapshot_getter = getattr(self.manager.db, "get_snapshot_by_venta", None)
             try:
-                snapshot = snapshot_getter(venta_id) if callable(snapshot_getter) else None
+                snapshot = self.manager.db.get_snapshot_by_venta(venta_id)
             except SnapshotNotFoundError:
-                snapshot = None
-            except Exception:
                 snapshot = None
             if snapshot and snapshot.payload:
                 snapshot_payload = deepcopy(snapshot.payload)
@@ -9637,7 +9543,7 @@ class FacturacionTab(QWidget):
             return
 
         # Intenta obtener el sello de recepción desde dte_envios
-        sello = self._extract_sello_from_payload(raw_payload, data)
+        sello = data.get("selloRecibido")
         if not sello and venta_id:
             resp_envio = self.manager.db.consultar_envio_dte(venta_id) or {}
             sello = resp_envio.get("selloRecibido") or resp_envio.get("sello")
@@ -9997,43 +9903,36 @@ class FacturacionTab(QWidget):
         ambiente = "01" if ambiente_cfg == "produccion" else "00"
 
         nota_json = None
-        snapshot_exc: Optional[Exception] = None
-        fallback_reason: Optional[str] = None
+        snapshot_exc: Optional[SnapshotNotFoundError] = None
         if tipo == "credito":
-            if venta_id is None:
-                fallback_reason = "factura sin venta asociada"
-            else:
-                try:
-                    nota_json = nota_credito_electronica.generar_nce_desde_nota(
-                        self.manager.db,
-                        nota_id,
-                        ambiente=ambiente,
-                        strict_snapshot=False,
-                    )
-                    logger.info(
-                        "Nota crédito generada nota_id=%s venta_id=%s source=%s",
-                        nota_id,
-                        venta_id,
-                        "snapshot" if snapshot_exc is None else "json_fallback",
-                    )
-                except SnapshotNotFoundError as exc:
-                    snapshot_exc = exc
+            try:
+                nota_json = nota_credito_electronica.generar_nce_desde_nota(
+                    self.manager.db,
+                    nota_id,
+                    ambiente=ambiente,
+                    strict_snapshot=False,
+                )
+                logger.info(
+                    "Nota crédito generada nota_id=%s venta_id=%s source=%s",
+                    nota_id,
+                    venta_id,
+                    "snapshot" if snapshot_exc is None else "json_fallback",
+                )
+            except SnapshotNotFoundError as exc:
+                snapshot_exc = exc
         elif tipo == "debito":
-            if venta_id is None:
-                fallback_reason = "factura sin venta asociada"
-            else:
-                try:
-                    nota_json = generar_nota_debito_json(
-                        self.manager.db, nota_id, ambiente=ambiente
-                    )
-                    logger.info(
-                        "Nota débito generada nota_id=%s venta_id=%s source=%s",
-                        nota_id,
-                        venta_id,
-                        "snapshot" if snapshot_exc is None else "json_fallback",
-                    )
-                except SnapshotNotFoundError as exc:
-                    snapshot_exc = exc
+            try:
+                nota_json = generar_nota_debito_json(
+                    self.manager.db, nota_id, ambiente=ambiente
+                )
+                logger.info(
+                    "Nota débito generada nota_id=%s venta_id=%s source=%s",
+                    nota_id,
+                    venta_id,
+                    "snapshot" if snapshot_exc is None else "json_fallback",
+                )
+            except SnapshotNotFoundError as exc:
+                snapshot_exc = exc
         else:
             nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
 
@@ -10047,25 +9946,19 @@ class FacturacionTab(QWidget):
                 )
                 if base_fecha:
                     base_fecha = str(base_fecha).split("T")[0]
-                fecha_fallback = base_fecha or date.today().isoformat()
+                hoy = base_fecha or date.today().isoformat()
                 rel = payload.get("documentoRelacionado") or []
                 for doc in rel:
                     if isinstance(doc, dict):
-                        fecha_actual = doc.get("fechaEmision")
-                        if fecha_actual:
-                            # Conserva la fecha histórica ya calculada por el generador.
-                            doc["fechaEmision"] = str(fecha_actual).split("T")[0]
-                        else:
-                            doc["fechaEmision"] = fecha_fallback
+                        doc["fechaEmision"] = hoy
             except Exception:
                 logger.debug("No se pudo normalizar fecha de documentoRelacionado", exc_info=True)
 
-        if nota_json is None and (snapshot_exc or fallback_reason):
+        if nota_json is None and snapshot_exc:
             logger.warning(
-                "Generador primario no disponible para nota %s de venta %s; usando respaldo (%s)",
+                "Snapshot faltante para nota %s de venta %s; usando generador de respaldo",
                 nota_id,
                 venta_id,
-                fallback_reason or "snapshot faltante",
                 exc_info=snapshot_exc,
             )
             if tipo == "credito":

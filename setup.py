@@ -48,7 +48,9 @@ DEFAULT_EXCLUDED_DIR_GLOBS: Set[str] = {
     '.venv*',
 }
 DEFAULT_EXCLUDED_RELATIVE_PATHS: Set[Path] = {
-    Path('svfe-api-firmador') / 'uploads'
+    Path('svfe-api-firmador') / 'uploads',
+    # Avoid bundling accidental nested copies of the repository.
+    Path('repositorio de github'),
 }
 
 @dataclass(frozen=True)

@@ -9954,13 +9954,8 @@ class FacturacionTab(QWidget):
             )
             logger.info("Nota creada nota_id=%s venta_id=%s tipo=%s", nota_id, venta_id, tipo)
         except ValueError as exc:
-            message = str(exc)
-            if "saldo restante" in message.lower():
-                QMessageBox.warning(
-                    self, "Nota", "El monto excede el saldo restante de la venta"
-                )
-                return
-            raise
+            QMessageBox.warning(self, "Nota", str(exc))
+            return
 
         dialog_detalles_pdf: List[dict] = []
         for det in detalles_nota or []:
@@ -10018,6 +10013,29 @@ class FacturacionTab(QWidget):
                     )
                 except SnapshotNotFoundError as exc:
                     snapshot_exc = exc
+                except ValueError as exc:
+                    message = str(exc)
+                    message_norm = message.lower()
+                    if "monto excede total del documento de origen" in message_norm:
+                        answer = QMessageBox.question(
+                            self,
+                            "Nota",
+                            (
+                                "El monto de la nota supera el total del documento de origen.\n"
+                                "Hacienda puede rechazarla.\n\n"
+                                "¿Desea continuar de todas formas?"
+                            ),
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.No,
+                        )
+                        if answer != QMessageBox.Yes:
+                            QMessageBox.warning(self, "Nota", message)
+                            return
+                        fallback_reason = "monto excede total del documento de origen"
+                        snapshot_exc = exc
+                    else:
+                        QMessageBox.warning(self, "Nota", message)
+                        return
         elif tipo == "debito":
             if venta_id is None:
                 fallback_reason = "factura sin venta asociada"

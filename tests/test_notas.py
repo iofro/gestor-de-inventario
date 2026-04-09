@@ -41,20 +41,21 @@ def test_agregar_nota_venta_inexistente():
         db.agregar_nota("debito", 999, "2024-01-03", 10, "extra")
 
 
-def test_credito_no_supera_total():
+def test_credito_permite_superar_total_local():
     db = create_db()
     db.add_cliente("Ana", "", "", "", "", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 50, cliente_id=cliente_id)
-    with pytest.raises(ValueError):
-        db.agregar_nota("credito", venta_id, "2024-01-02", 60, "Dev")
+    note_id = db.agregar_nota("credito", venta_id, "2024-01-02", 60, "Dev")
+    assert isinstance(note_id, int)
 
 
-def test_credito_no_supera_saldo():
+def test_credito_permite_superar_saldo_acumulado_local():
     db = create_db()
     db.add_cliente("Ana", "", "", "", "", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 100, cliente_id=cliente_id)
-    db.agregar_nota("credito", venta_id, "2024-01-02", 60, "Parcial")
-    with pytest.raises(ValueError):
-        db.agregar_nota("credito", venta_id, "2024-01-03", 50, "Resto")
+    first_id = db.agregar_nota("credito", venta_id, "2024-01-02", 60, "Parcial")
+    second_id = db.agregar_nota("credito", venta_id, "2024-01-03", 50, "Resto")
+    assert isinstance(first_id, int)
+    assert isinstance(second_id, int)

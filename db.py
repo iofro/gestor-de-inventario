@@ -4517,6 +4517,10 @@ class DB:
         Si ``venta_id`` es ``None``, la nota se almacenará sin asociarse a una
         venta. Esto puede ocasionar inconsistencias si la venta no se
         regulariza posteriormente.
+
+        Nota: no se aplica límite local por saldo para notas de crédito.
+        Cualquier rechazo por reglas fiscales debe provenir del validador
+        externo (Hacienda).
         """
         if tipo not in ("credito", "debito", "remision"):
             raise ValueError("tipo debe ser 'credito', 'debito' o 'remision'")
@@ -4525,17 +4529,6 @@ class DB:
             row = self.cursor.execute("SELECT total FROM ventas WHERE id=?", (venta_id,)).fetchone()
             if row is None:
                 raise ValueError("La venta indicada no existe")
-            if tipo == "credito":
-                total_facturado = Decimal(str(row["total"]))
-                sum_row = self.cursor.execute(
-                    "SELECT COALESCE(SUM(monto),0) AS total FROM notas WHERE venta_id=? AND tipo='credito'",
-                    (venta_id,),
-                ).fetchone()
-                total_creditos = Decimal(str(sum_row["total"]))
-                monto_dec = Decimal(str(monto))
-                saldo = total_facturado - total_creditos
-                if monto_dec > saldo:
-                    raise ValueError("El monto de la nota excede el saldo restante de la venta")
 
         detalles_json = json.dumps(detalles) if detalles is not None else None
         self.cursor.execute(

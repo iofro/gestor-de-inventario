@@ -2216,7 +2216,7 @@ def test_rejected_invoice_with_revert_rolls_back_correlativo(monkeypatch, qt_app
     assert db.get_venta_by_id(venta_id) is None
 
 
-def test_ui_saldo_insuficiente(qt_app, tmp_path, monkeypatch):
+def test_ui_permita_credito_sin_limite_local(qt_app, tmp_path, monkeypatch):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
     factura_path = tmp_path / "factura.json"
@@ -2247,12 +2247,75 @@ def test_ui_saldo_insuficiente(qt_app, tmp_path, monkeypatch):
 
     manager = SimpleNamespace(db=db, _clientes=[{"id": cid, "nombre": "C", "email": "c@x.com"}], _Distribuidores=[])
     tab = facturacion_tab.FacturacionTab(manager)
+    monkeypatch.setattr(tab, "_show_pdf_preview", lambda *a, **k: None)
+    monkeypatch.setattr(tab, "_mostrar_respuesta_hacienda", lambda *a, **k: None)
 
     monkeypatch.setattr(facturacion_tab.QMessageBox, "question", lambda *a, **k: facturacion_tab.QMessageBox.Yes)
     warnings: list[str] = []
     monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
     monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    pdf_path = tmp_path / "nota_ui.pdf"
+    json_note_path = tmp_path / "nota_ui.json"
+
+    monkeypatch.setattr(
+        facturacion_tab,
+        "get_dte_document_paths",
+        lambda *a, **k: (str(pdf_path), str(json_note_path)),
+    )
+    monkeypatch.setattr(facturacion_tab, "generar_nota_credito_pdf", lambda *a, **k: None)
+    monkeypatch.setattr(
+        facturacion_tab,
+        "write_pdf_atomically",
+        lambda path, render: str(pdf_path),
+    )
+    monkeypatch.setattr(
+        facturacion_tab,
+        "sign_and_save",
+        lambda nota_json, path, return_token=True: (path, "signed-token"),
+    )
+    monkeypatch.setattr(
+        facturacion_tab,
+        "persist_client_json",
+        lambda path, payload, firma=None, sello=None: Path(path),
+    )
+
+    nota_stub = {
+        "identificacion": {
+            "tipoDte": "05",
+            "codigoGeneracion": "12345678-1234-1234-1234-123456789012",
+            "numeroControl": "DTE-05-001",
+            "fecEmi": "2024-01-15",
+        },
+        "resumen": {
+            "subTotalVentas": 0,
+            "totalDescu": 0,
+            "montoTotalOperacion": 15,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+            "totalLetras": "QUINCE",
+        },
+        "cuerpoDocumento": [
+            {
+                "cantidad": 1,
+                "descripcion": "Ajuste",
+                "precioUni": 15,
+                "ventaGravada": 15,
+                "tributos": [],
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        facturacion_tab.nota_credito_electronica,
+        "generar_nce_desde_nota",
+        lambda *a, **k: copy.deepcopy(nota_stub),
+    )
+    monkeypatch.setattr(
+        facturacion_tab.dte,
+        "_enviar_documento",
+        lambda *a, **k: {"estado": "Pendiente"},
+    )
 
     class DummyDialog:
         def __init__(self, detalles, tipo, parent):
@@ -2271,6 +2334,153 @@ def test_ui_saldo_insuficiente(qt_app, tmp_path, monkeypatch):
         factura={"venta_id": venta_id, "json": str(factura_path)},
     )
 
-    assert warnings == ["El monto excede el saldo restante de la venta"]
+    assert "El monto excede el saldo restante de la venta" not in warnings
     notas_count = db.cursor.execute("SELECT COUNT(*) FROM notas").fetchone()[0]
-    assert notas_count == 0
+    assert notas_count == 1
+
+
+def test_create_nota_credito_monto_excedido_permite_continuar(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+
+    factura_path = tmp_path / "factura_exceso.json"
+    factura_json = {
+        "identificacion": {
+            "tipoDte": "03",
+            "numeroControl": "DTE-03-S001P001-000000000000777",
+            "codigoGeneracion": "77777777-ABCD-1234-ABCD-1234567890AB",
+            "fecEmi": "2024-01-01",
+        },
+        "resumen": {"montoTotalOperacion": 10, "totalPagar": 10},
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "descripcion": "Producto",
+                "cantidad": 1,
+                "precioUni": 10,
+                "ventaGravada": 10,
+                "ventaExenta": 0,
+                "ventaNoSuj": 0,
+                "tributos": [],
+                "uniMedida": 59,
+                "tipoItem": 1,
+            }
+        ],
+        "receptor": {"nombre": "Cliente"},
+    }
+    factura_path.write_text(json.dumps(factura_json), encoding="utf-8")
+
+    manager = SimpleNamespace(
+        db=db,
+        _clientes=[{"id": cid, "nombre": "C", "email": "c@x.com"}],
+        _Distribuidores=[],
+    )
+    tab = facturacion_tab.FacturacionTab(manager)
+    monkeypatch.setattr(tab, "_show_pdf_preview", lambda *a, **k: None)
+    monkeypatch.setattr(tab, "_mostrar_respuesta_hacienda", lambda *a, **k: None)
+
+    monkeypatch.setattr(
+        facturacion_tab.QMessageBox,
+        "question",
+        lambda *a, **k: facturacion_tab.QMessageBox.Yes,
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    pdf_path = tmp_path / "nota_exceso.pdf"
+    json_note_path = tmp_path / "nota_exceso.json"
+    monkeypatch.setattr(
+        facturacion_tab,
+        "get_dte_document_paths",
+        lambda *a, **k: (str(pdf_path), str(json_note_path)),
+    )
+    monkeypatch.setattr(facturacion_tab, "generar_nota_credito_pdf", lambda *a, **k: None)
+    monkeypatch.setattr(
+        facturacion_tab,
+        "write_pdf_atomically",
+        lambda path, render: str(pdf_path),
+    )
+    monkeypatch.setattr(
+        facturacion_tab,
+        "sign_and_save",
+        lambda nota_json, path, return_token=True: (path, "signed-token"),
+    )
+    monkeypatch.setattr(
+        facturacion_tab,
+        "persist_client_json",
+        lambda path, payload, firma=None, sello=None: Path(path),
+    )
+
+    class DummyDialog:
+        def __init__(self, detalles, tipo, parent):
+            self._detalles = detalles
+
+        def exec_(self):
+            return QDialog.Accepted
+
+        def get_data(self):
+            return (15.0, "Motivo", [])
+
+    monkeypatch.setattr(facturacion_tab, "NotaDetalleDialog", DummyDialog)
+
+    monkeypatch.setattr(
+        facturacion_tab.nota_credito_electronica,
+        "generar_nce_desde_nota",
+        lambda *a, **k: (_ for _ in ()).throw(
+            ValueError("Monto excede total del documento de origen")
+        ),
+    )
+
+    fallback_called = {"ok": False}
+    nota_stub = {
+        "identificacion": {
+            "tipoDte": "05",
+            "codigoGeneracion": "12345678-1234-1234-1234-123456789012",
+            "numeroControl": "DTE-05-001",
+            "fecEmi": "2024-01-15",
+        },
+        "resumen": {
+            "subTotalVentas": 0,
+            "totalDescu": 0,
+            "montoTotalOperacion": 15,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+            "totalLetras": "QUINCE",
+        },
+        "cuerpoDocumento": [
+            {
+                "cantidad": 1,
+                "descripcion": "Ajuste",
+                "precioUni": 15,
+                "ventaGravada": 15,
+                "tributos": [],
+            }
+        ],
+    }
+
+    def _fake_fallback(*args, **kwargs):
+        fallback_called["ok"] = True
+        return copy.deepcopy(nota_stub)
+
+    monkeypatch.setattr(
+        facturacion_tab.nota_credito_electronica,
+        "generar_nce_desde_dte",
+        _fake_fallback,
+    )
+    monkeypatch.setattr(
+        facturacion_tab.dte,
+        "_enviar_documento",
+        lambda *a, **k: {"estado": "Pendiente"},
+    )
+
+    tab.create_nota(
+        "credito",
+        factura={"venta_id": venta_id, "json": str(factura_path)},
+    )
+
+    assert fallback_called["ok"] is True
+    assert "Monto excede total del documento de origen" not in warnings
+    notas_count = db.cursor.execute("SELECT COUNT(*) FROM notas").fetchone()[0]
+    assert notas_count == 1

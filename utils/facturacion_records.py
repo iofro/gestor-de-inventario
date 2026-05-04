@@ -1267,6 +1267,8 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             "tipo": tipo_desc or doc_tipo,
             "codigo": tipo_codigo,
         }
+        if ruta:
+            row["pdf"] = ruta
         if json_path and os.path.exists(json_path):
             row["json"] = json_path
         if ticket_info:

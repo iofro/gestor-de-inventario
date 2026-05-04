@@ -109,6 +109,71 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     assert save_path.with_suffix(".json").exists()
 
 
+def test_selected_invoice_uses_row_paths_over_latest_sale_pdf(
+    qt_app, tmp_path, monkeypatch
+):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db, credito=True)
+
+    factura_pdf = tmp_path / "factura_original.pdf"
+    factura_json = tmp_path / "factura_original.json"
+    factura_pdf.write_text("pdf", encoding="utf-8")
+    factura_json.write_text(
+        json.dumps(
+            {
+                "identificacion": {
+                    "numeroControl": "DTE-03-S001P001-000000000000181",
+                    "codigoGeneracion": "DFE84FAA-9B40-40CD-813F-80FEB48361C7",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    nota_pdf = tmp_path / "nota_credito.pdf"
+    nota_json = tmp_path / "nota_credito.json"
+    nota_pdf.write_text("pdf", encoding="utf-8")
+    nota_json.write_text(
+        json.dumps(
+            {
+                "identificacion": {
+                    "numeroControl": "DTE-05-S001P001-000000000000001",
+                    "codigoGeneracion": "070AEE3D-C0EA-4969-A33F-AA709318001F",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    tab = _make_tab(db, cid)
+    entry = {
+        "row_type": "venta",
+        "venta_id": venta_id,
+        "pdf": str(factura_pdf),
+        "json": str(factura_json),
+        "tipo": "Crédito fiscal",
+    }
+    monkeypatch.setattr(tab, "_selected_entry", lambda: entry)
+
+    # Simula que "último PDF por venta" apunta a una nota y no a la factura base.
+    monkeypatch.setattr(tab.manager.db, "get_factura_pdf", lambda _vid: str(nota_pdf))
+
+    factura = tab._selected_factura()
+    assert factura is not None
+    assert factura["pdf"] == str(factura_pdf)
+    assert factura["json"] == str(factura_json)
+
+    resolved_pdf = tab._resolve_pdf_path(entry)
+    assert resolved_pdf == str(factura_pdf)
+
+    pdf_path, _ticket_path, dte_json_path = tab._get_invoice_paths(
+        venta_id,
+        entry=entry,
+    )
+    assert pdf_path == str(factura_pdf)
+    assert dte_json_path == str(factura_json)
+
+
 @pytest.mark.parametrize("ui_mode", ["contingencia", "normal"])
 def test_create_nota_propagates_ui_mode(monkeypatch, qt_app, tmp_path, ui_mode):
     class DummyCursor:

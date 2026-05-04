@@ -5068,18 +5068,25 @@ class FacturacionTab(QWidget):
         rtype = data.get("row_type")
         if rtype in {"venta", "ticket"}:
             venta_id = data.get("venta_id")
-            pdf_path = None
-            json_path = None
-            if rtype == "venta":
-                pdf_path = self.manager.db.get_factura_pdf(venta_id)
-                if not pdf_path:
-                    return None
-                json_path = os.path.splitext(pdf_path)[0] + ".json"
-            else:
-                _, ticket_path, json_path = self._get_invoice_paths(
+            pdf_path = data.get("pdf")
+            json_path = data.get("json")
+
+            if rtype == "ticket":
+                _, ticket_path, resolved_json = self._get_invoice_paths(
                     venta_id, entry=data
                 )
-                pdf_path = ticket_path or self.manager.db.get_factura_pdf(venta_id)
+                pdf_path = ticket_path or pdf_path
+                if not json_path:
+                    json_path = resolved_json
+
+            if not pdf_path and venta_id:
+                pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not json_path and pdf_path:
+                json_path = os.path.splitext(pdf_path)[0] + ".json"
+            if not pdf_path and json_path:
+                candidate_pdf = os.path.splitext(json_path)[0] + ".pdf"
+                if os.path.exists(candidate_pdf):
+                    pdf_path = candidate_pdf
             if not json_path or not os.path.exists(json_path):
                 return None
             control = None
@@ -6013,6 +6020,19 @@ class FacturacionTab(QWidget):
         if normalized_payload is not None:
             self._update_last_ident_label(entry, factura, normalized_payload, json_path)
 
+        preferred_email_pdf = None
+        preferred_email_json = json_path
+        if rtype == "venta" and factura:
+            venta_ref = factura.get("venta_id") or entry.get("venta_id")
+            pref_pdf, _pref_ticket, pref_json = self._get_invoice_paths(
+                venta_ref,
+                factura=factura,
+                entry=entry,
+            )
+            preferred_email_pdf = pref_pdf or factura.get("pdf")
+            if not preferred_email_json:
+                preferred_email_json = pref_json
+
         dialog = SendOptionsDialog(self)
         dialog.email_cb.setChecked(rtype not in {"retencion"})
         dialog.hacienda_cb.setChecked(True)
@@ -6456,6 +6476,10 @@ class FacturacionTab(QWidget):
                     force_regenerate=bool(send_hacienda and mh_success),
                     expected_codigo=codigo_generacion,
                     expected_sello=sello_resp,
+                    entry=entry,
+                    factura=factura,
+                    preferred_pdf_path=preferred_email_pdf,
+                    preferred_json_path=preferred_email_json,
                 )
             elif rtype == "ticket":
                 if send_hacienda and not mh_success:
@@ -6658,20 +6682,27 @@ class FacturacionTab(QWidget):
         if not entry:
             return None
 
-        pdf_path = None
+        pdf_path = entry.get("pdf")
         rtype = entry.get("row_type")
         if rtype == "venta":
             venta_id = entry.get("venta_id")
-            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not pdf_path and venta_id:
+                pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if (not pdf_path or not os.path.exists(pdf_path)) and entry.get("json"):
+                candidate_pdf = os.path.splitext(entry.get("json"))[0] + ".pdf"
+                if os.path.exists(candidate_pdf):
+                    pdf_path = candidate_pdf
             if not pdf_path or not os.path.exists(pdf_path):
                 pdf_path = self._generate_invoice_pdf(venta_id)
         elif rtype == "ticket":
             venta_id = entry.get("venta_id")
-            pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+            pdf_path = entry.get("ticket_pdf") or entry.get("ticket_path") or pdf_path
+            if not pdf_path and venta_id:
+                pdf_path = self.manager.db.get_ticket_pdf(venta_id)
             if not pdf_path or not os.path.exists(pdf_path):
                 pdf_path = self._generate_ticket_pdf(venta_id)
         else:
-            pdf_path = entry.get("pdf")
+            pdf_path = entry.get("pdf") or pdf_path
 
         if pdf_path and os.path.exists(pdf_path):
             return pdf_path
@@ -6830,11 +6861,14 @@ class FacturacionTab(QWidget):
 
             carta_pdf_path = None
             if preferred_format in ("carta", "ticket"):
+                if base_pdf_path and os.path.exists(base_pdf_path):
+                    carta_pdf_path = base_pdf_path
                 if venta_id and not is_note:
-                    try:
-                        carta_pdf_path = self.manager.db.get_factura_pdf(venta_id)
-                    except Exception:
-                        carta_pdf_path = None
+                    if not carta_pdf_path:
+                        try:
+                            carta_pdf_path = self.manager.db.get_factura_pdf(venta_id)
+                        except Exception:
+                            carta_pdf_path = None
                     if not carta_pdf_path or not os.path.exists(carta_pdf_path):
                         carta_pdf_path = self._generate_invoice_pdf(venta_id)
                 if not venta_id:
@@ -7022,6 +7056,14 @@ class FacturacionTab(QWidget):
             )
             return None
 
+        preserve_pdf_fields = bool(entry.get("preserve_pdf_fields")) if isinstance(entry, Mapping) else False
+        source_payload_norm: Mapping[str, Any] | None = None
+        if preserve_pdf_fields and isinstance(entry, Mapping):
+            source_payload = entry.get("source_payload")
+            if isinstance(source_payload, Mapping):
+                source_copy = dict(source_payload)
+                source_payload_norm = self._normalize_factura_payload(source_copy)
+
         ident = dte_payload.get("identificacion") or {}
         resumen = dte_payload.get("resumen") or {}
         receptor = dte_payload.get("receptor") or {}
@@ -7065,6 +7107,45 @@ class FacturacionTab(QWidget):
                 return float(Decimal(str(value)))
             except (InvalidOperation, ValueError, TypeError):
                 return None
+
+        def _to_int(value: Any) -> int | None:
+            if value in (None, ""):
+                return None
+            try:
+                return int(str(value).strip())
+            except (ValueError, TypeError):
+                return None
+
+        def _clean_text(value: Any) -> str | None:
+            if value is None:
+                return None
+            if isinstance(value, str):
+                text = value.strip()
+                return text or None
+            text = str(value).strip()
+            return text or None
+
+        def _pick_first_text(sources: list[Mapping[str, Any]], keys: tuple[str, ...]) -> str | None:
+            for source in sources:
+                if not isinstance(source, Mapping):
+                    continue
+                for key in keys:
+                    value = _clean_text(source.get(key))
+                    if value:
+                        return value
+            return None
+
+        def _pick_first_value(sources: list[Mapping[str, Any]], keys: tuple[str, ...]) -> Any:
+            for source in sources:
+                if not isinstance(source, Mapping):
+                    continue
+                for key in keys:
+                    if key not in source:
+                        continue
+                    value = source.get(key)
+                    if value not in (None, ""):
+                        return value
+            return None
 
         venta_data: dict[str, Any] = {}
         fecha_emi = ident.get("fecEmi") or ident.get("fechaEmi")
@@ -7138,6 +7219,14 @@ class FacturacionTab(QWidget):
             if not isinstance(item, Mapping):
                 continue
             detalle: dict[str, Any] = {}
+            num_item = _to_int(_first(item, "numItem", "num_item", "id"))
+            if num_item is not None:
+                detalle["num_item"] = num_item
+
+            producto_id = _to_int(_first(item, "codigo", "producto_id", "productoId"))
+            if producto_id is not None:
+                detalle["producto_id"] = producto_id
+
             descripcion = _first(
                 item,
                 "descripcion",
@@ -7179,21 +7268,438 @@ class FacturacionTab(QWidget):
 
             detalles.append(detalle)
 
+        venta_row: dict[str, Any] = {}
+        credito_row: dict[str, Any] = {}
+        detalles_db: list[dict[str, Any]] = []
+        source_candidates: list[Mapping[str, Any]] = []
+        cliente_row: dict[str, Any] = {}
+
+        if preserve_pdf_fields:
+            venta_id_raw = None
+            if isinstance(entry, Mapping):
+                venta_id_raw = entry.get("venta_id") or entry.get("source_venta_id")
+            venta_id = _to_int(venta_id_raw)
+
+            db_obj = getattr(self.manager, "db", None)
+            if db_obj and venta_id is not None:
+                venta_getter = getattr(db_obj, "get_venta_by_id", None)
+                if callable(venta_getter):
+                    try:
+                        fetched_venta = venta_getter(venta_id)
+                        if isinstance(fetched_venta, Mapping):
+                            venta_row = dict(fetched_venta)
+                    except Exception:
+                        venta_row = {}
+                if not venta_row:
+                    ventas_getter = getattr(db_obj, "get_ventas", None)
+                    if callable(ventas_getter):
+                        try:
+                            ventas_all = ventas_getter() or []
+                        except Exception:
+                            ventas_all = []
+                        venta_row = next(
+                            (
+                                dict(v)
+                                for v in ventas_all
+                                if isinstance(v, Mapping)
+                                and _to_int(v.get("id")) == venta_id
+                            ),
+                            {},
+                        )
+
+                credito_getter = getattr(db_obj, "get_venta_credito_fiscal", None)
+                if callable(credito_getter):
+                    try:
+                        fetched_credito = credito_getter(venta_id)
+                        if isinstance(fetched_credito, Mapping):
+                            credito_row = dict(fetched_credito)
+                    except Exception:
+                        credito_row = {}
+
+                detalles_getter = getattr(db_obj, "get_detalles_venta", None)
+                if callable(detalles_getter):
+                    try:
+                        fetched_detalles = detalles_getter(venta_id) or []
+                        detalles_db = [dict(d) for d in fetched_detalles if isinstance(d, Mapping)]
+                    except Exception:
+                        detalles_db = []
+
+                cliente_id = _to_int(
+                    _pick_first_value(
+                        [venta_row, credito_row],
+                        ("cliente_id", "clienteId"),
+                    )
+                )
+                if cliente_id is not None:
+                    cliente_getter = getattr(db_obj, "get_cliente", None)
+                    if callable(cliente_getter):
+                        try:
+                            fetched_cliente = cliente_getter(cliente_id)
+                            if isinstance(fetched_cliente, Mapping):
+                                cliente_row = dict(fetched_cliente)
+                        except Exception:
+                            cliente_row = {}
+
+            venta_extra: dict[str, Any] = {}
+            credito_extra: dict[str, Any] = {}
+
+            raw_venta_extra = venta_row.get("extra")
+            if isinstance(raw_venta_extra, Mapping):
+                venta_extra = dict(raw_venta_extra)
+            elif isinstance(raw_venta_extra, str):
+                try:
+                    parsed_venta_extra = json.loads(raw_venta_extra)
+                    if isinstance(parsed_venta_extra, Mapping):
+                        venta_extra = dict(parsed_venta_extra)
+                except Exception:
+                    venta_extra = {}
+
+            raw_credito_extra = credito_row.get("extra")
+            if isinstance(raw_credito_extra, Mapping):
+                credito_extra = dict(raw_credito_extra)
+            elif isinstance(raw_credito_extra, str):
+                try:
+                    parsed_credito_extra = json.loads(raw_credito_extra)
+                    if isinstance(parsed_credito_extra, Mapping):
+                        credito_extra = dict(parsed_credito_extra)
+                except Exception:
+                    credito_extra = {}
+
+            if venta_extra:
+                source_candidates.append(venta_extra)
+            if credito_extra:
+                source_candidates.append(credito_extra)
+            if isinstance(source_payload_norm, Mapping):
+                source_candidates.append(source_payload_norm)
+                extension = source_payload_norm.get("extension")
+                if isinstance(extension, Mapping):
+                    source_candidates.append(extension)
+                extra = source_payload_norm.get("extra")
+                if isinstance(extra, Mapping):
+                    source_candidates.append(extra)
+
+            header_sources: list[Mapping[str, Any]] = []
+            if credito_row:
+                header_sources.append(credito_row)
+            if venta_row:
+                header_sources.append(venta_row)
+            header_sources.extend(source_candidates)
+
+            no_remision = _pick_first_text(
+                header_sources,
+                ("no_remision", "noRemision", "numeroRemision", "numRemision", "remision"),
+            )
+            orden_no = _pick_first_text(
+                header_sources,
+                ("orden_no", "ordenNo", "numeroOrden", "numOrden", "orden"),
+            )
+            if no_remision:
+                venta_data["no_remision"] = no_remision
+            if orden_no:
+                venta_data["orden_no"] = orden_no
+
+            condicion_pago = _pick_first_text(
+                header_sources,
+                ("condicion_pago", "condicionPago"),
+            )
+            if condicion_pago:
+                venta_data["condicion_pago"] = condicion_pago
+
+            if not venta_data.get("sello_recepcion"):
+                sello_fallback = _pick_first_text(
+                    source_candidates,
+                    (
+                        "sello_recepcion",
+                        "selloRecibido",
+                        "selloRecepcion",
+                        "sello",
+                        "acuseRecibo",
+                    ),
+                )
+                if sello_fallback:
+                    venta_data["sello_recepcion"] = sello_fallback
+                    sello = sello_fallback
+
+            def _parse_extra_mapping(raw_value: Any) -> Mapping[str, Any] | None:
+                if isinstance(raw_value, Mapping):
+                    return raw_value
+                if isinstance(raw_value, str):
+                    text = raw_value.strip()
+                    if not text:
+                        return None
+                    try:
+                        parsed = json.loads(text)
+                    except Exception:
+                        return None
+                    if isinstance(parsed, Mapping):
+                        return parsed
+                return None
+
+            def _enrich_detalle_row(row_value: Mapping[str, Any]) -> dict[str, Any]:
+                enriched = dict(row_value)
+                extra_map = _parse_extra_mapping(enriched.get("extra"))
+                if not extra_map:
+                    return enriched
+
+                metadata_sources: list[Mapping[str, Any]] = [extra_map]
+                lotes_val = extra_map.get("lotes")
+                if isinstance(lotes_val, list):
+                    metadata_sources.extend(
+                        item for item in lotes_val if isinstance(item, Mapping)
+                    )
+
+                for source in metadata_sources:
+                    for key in (
+                        "lote_id",
+                        "loteId",
+                        "producto_id",
+                        "productoId",
+                        "codigo_lote",
+                        "codigoLote",
+                        "lote",
+                        "fecha_vencimiento",
+                        "fechaVencimiento",
+                        "vencimiento",
+                        "registro_sanitario",
+                        "registroSanitario",
+                    ):
+                        source_val = source.get(key)
+                        if source_val in (None, ""):
+                            continue
+                        if key == "codigoLote":
+                            if enriched.get("codigo_lote") in (None, ""):
+                                enriched["codigo_lote"] = source_val
+                            continue
+                        if enriched.get(key) in (None, ""):
+                            enriched[key] = source_val
+
+                return enriched
+
+            def _row_metadata_score(row_value: Mapping[str, Any] | None) -> int:
+                if not isinstance(row_value, Mapping):
+                    return -1
+                score = 0
+                for key in (
+                    "lote_id",
+                    "loteId",
+                    "codigo_lote",
+                    "codigoLote",
+                    "lote",
+                    "fecha_vencimiento",
+                    "fechaVencimiento",
+                    "vencimiento",
+                ):
+                    if row_value.get(key) not in (None, ""):
+                        score += 1
+                return score
+
+            def _norm_desc(value: Any) -> str:
+                if value is None:
+                    return ""
+                return " ".join(str(value).strip().lower().split())
+
+            detalles_db_by_num: dict[int, tuple[int, Mapping[str, Any]]] = {}
+            detalles_db_by_index: dict[int, Mapping[str, Any]] = {}
+            detalles_db_by_producto: dict[int, list[tuple[int, Mapping[str, Any]]]] = {}
+            detalles_db_by_desc: dict[str, list[tuple[int, Mapping[str, Any]]]] = {}
+            source_items_by_num: dict[int, Mapping[str, Any]] = {}
+            source_items_by_index: dict[int, Mapping[str, Any]] = {}
+            used_db_indices: set[int] = set()
+
+            for idx, row in enumerate(detalles_db, start=1):
+                row = _enrich_detalle_row(row)
+                detalles_db_by_index[idx] = row
+                item_num = _to_int(row.get("num_item") or row.get("numItem"))
+                if item_num is not None:
+                    detalles_db_by_num.setdefault(item_num, (idx, row))
+                producto_num = _to_int(row.get("producto_id") or row.get("productoId"))
+                if producto_num is not None:
+                    detalles_db_by_producto.setdefault(producto_num, []).append((idx, row))
+                desc_norm = _norm_desc(row.get("descripcion"))
+                if desc_norm:
+                    detalles_db_by_desc.setdefault(desc_norm, []).append((idx, row))
+
+            source_cuerpo = []
+            if isinstance(source_payload_norm, Mapping):
+                source_cuerpo = source_payload_norm.get("cuerpoDocumento") or []
+            for idx, row in enumerate(source_cuerpo, start=1):
+                if not isinstance(row, Mapping):
+                    continue
+                source_items_by_index[idx] = row
+                item_num = _to_int(row.get("numItem") or row.get("num_item"))
+                if item_num is None:
+                    item_num = idx
+                source_items_by_num.setdefault(item_num, row)
+
+            for idx, detalle in enumerate(detalles, start=1):
+                if not isinstance(detalle, dict):
+                    continue
+
+                item_num = _to_int(detalle.get("num_item")) or idx
+                db_row = None
+                db_idx_selected = None
+                db_match = detalles_db_by_num.get(item_num)
+                if db_match is not None:
+                    db_idx, db_candidate = db_match
+                    db_row = db_candidate
+                    db_idx_selected = db_idx
+                if db_row is None:
+                    db_candidate = detalles_db_by_index.get(idx)
+                    if db_candidate is not None and idx not in used_db_indices:
+                        db_row = db_candidate
+                        db_idx_selected = idx
+
+                producto_num = _to_int(detalle.get("producto_id"))
+                desc_norm = _norm_desc(detalle.get("descripcion"))
+
+                alt_candidates: list[tuple[int, Mapping[str, Any]]] = []
+                if producto_num is not None:
+                    alt_candidates.extend(detalles_db_by_producto.get(producto_num, []))
+                if desc_norm:
+                    alt_candidates.extend(detalles_db_by_desc.get(desc_norm, []))
+
+                best_alt_idx = None
+                best_alt_row = None
+                best_alt_score = -1
+                for cand_idx, cand_row in alt_candidates:
+                    if cand_idx in used_db_indices:
+                        continue
+                    cand_score = _row_metadata_score(cand_row)
+                    if cand_score > best_alt_score:
+                        best_alt_score = cand_score
+                        best_alt_idx = cand_idx
+                        best_alt_row = cand_row
+
+                current_score = _row_metadata_score(db_row)
+                if db_row is None and best_alt_row is not None:
+                    db_row = best_alt_row
+                    db_idx_selected = best_alt_idx
+                elif (
+                    best_alt_row is not None
+                    and best_alt_score > current_score
+                    and best_alt_score > 0
+                ):
+                    db_row = best_alt_row
+                    db_idx_selected = best_alt_idx
+
+                if db_idx_selected is not None:
+                    used_db_indices.add(db_idx_selected)
+
+                source_row = source_items_by_num.get(item_num) or source_items_by_index.get(idx)
+
+                for row in (db_row, source_row):
+                    if not isinstance(row, Mapping):
+                        continue
+                    for key in (
+                        "extra",
+                        "lote_id",
+                        "loteId",
+                        "producto_id",
+                        "productoId",
+                        "codigo_lote",
+                        "lote",
+                        "fecha_vencimiento",
+                        "fechaVencimiento",
+                        "vencimiento",
+                        "registro_sanitario",
+                        "registroSanitario",
+                    ):
+                        if detalle.get(key) not in (None, ""):
+                            continue
+                        value = row.get(key)
+                        if value not in (None, ""):
+                            detalle[key] = value
+
+                if detalle.get("extra") in (None, "") and isinstance(source_row, Mapping):
+                    source_extra = {}
+                    for source_key in (
+                        "lote_id",
+                        "loteId",
+                        "producto_id",
+                        "productoId",
+                        "codigo_lote",
+                        "lote",
+                        "fecha_vencimiento",
+                        "fechaVencimiento",
+                        "vencimiento",
+                        "registro_sanitario",
+                        "registroSanitario",
+                    ):
+                        raw_val = source_row.get(source_key)
+                        if raw_val not in (None, ""):
+                            source_extra[source_key] = raw_val
+                    lotes_val = source_row.get("lotes")
+                    if isinstance(lotes_val, list) and lotes_val:
+                        source_extra["lotes"] = lotes_val
+                    if source_extra:
+                        detalle["extra"] = source_extra
+
         if not detalles:
             detalles.append({"descripcion": ""})
 
         cliente_payload = {}
         for dest, candidates in (
             ("nombre", ("nombre", "razonSocial", "denominacionSocial")),
+            ("nombreComercial", ("nombreComercial", "nombre_comercial", "razonSocial")),
             ("nit", ("nit",)),
             ("dui", ("dui", "numDocumento")),
             ("nrc", ("nrc",)),
+            ("giro", ("giro", "descActividad")),
             ("direccion", ("direccion",)),
             ("correo", ("correo", "email")),
+            ("email", ("email", "correo")),
         ):
             value = _first(receptor, *candidates)
             if value not in (None, ""):
                 cliente_payload[dest] = value
+
+        if preserve_pdf_fields:
+            # Prefer persisted cliente data for PDF fidelity when available.
+            if cliente_row:
+                for dest, candidates in (
+                    ("nombre", ("nombre", "razonSocial", "denominacionSocial")),
+                    ("nombreComercial", ("nombreComercial", "nombre_comercial", "razonSocial")),
+                    ("nit", ("nit",)),
+                    ("dui", ("dui", "numDocumento")),
+                    ("nrc", ("nrc",)),
+                    ("giro", ("giro", "descActividad")),
+                    ("direccion", ("direccion",)),
+                    ("correo", ("correo", "email")),
+                    ("email", ("email", "correo")),
+                ):
+                    value = _first(cliente_row, *candidates)
+                    if value not in (None, ""):
+                        cliente_payload[dest] = value
+
+            receptor_sources: list[Mapping[str, Any]] = []
+            if isinstance(source_payload_norm, Mapping):
+                receptor_alt = source_payload_norm.get("receptor")
+                if isinstance(receptor_alt, Mapping):
+                    receptor_sources.append(receptor_alt)
+                extension_alt = source_payload_norm.get("extension")
+                if isinstance(extension_alt, Mapping):
+                    receptor_sources.append(extension_alt)
+            if isinstance(receptor, Mapping):
+                receptor_sources.append(receptor)
+            if credito_row:
+                receptor_sources.append(credito_row)
+
+            for dest, candidates in (
+                ("nombre", ("nombre", "razonSocial", "denominacionSocial")),
+                ("nombreComercial", ("nombreComercial", "nombre_comercial", "razonSocial")),
+                ("nit", ("nit",)),
+                ("dui", ("dui", "numDocumento")),
+                ("nrc", ("nrc",)),
+                ("giro", ("giro", "descActividad")),
+                ("direccion", ("direccion",)),
+                ("correo", ("correo", "email")),
+                ("email", ("email", "correo")),
+            ):
+                if cliente_payload.get(dest) not in (None, ""):
+                    continue
+                value = _pick_first_value(receptor_sources, candidates)
+                if value not in (None, ""):
+                    cliente_payload[dest] = value
 
         try:
             datos_negocio = dte._load_datos_negocio() or {}
@@ -7708,6 +8214,7 @@ class FacturacionTab(QWidget):
                 base_payload,
                 entry,
                 factura,
+                source_payload=raw_payload,
             )
             return
 
@@ -7729,6 +8236,7 @@ class FacturacionTab(QWidget):
                 base_payload,
                 entry,
                 factura,
+                source_payload=raw_payload,
             )
             return
 
@@ -7782,6 +8290,7 @@ class FacturacionTab(QWidget):
             keep_sello=options["keep_sello"],
             keep_numero_control=options["keep_numero_control"],
             allow_path_collision=options["allow_path_collision"],
+            source_payload=raw_payload,
         )
 
     def _choose_advanced_edit_options(self) -> dict | None:
@@ -7913,6 +8422,7 @@ class FacturacionTab(QWidget):
         keep_sello: bool = False,
         keep_numero_control: bool = False,
         allow_path_collision: bool = False,
+        source_payload: Mapping[str, Any] | None = None,
     ) -> None:
         if not isinstance(dte_payload, dict) or not dte_payload:
             QMessageBox.warning(
@@ -8047,6 +8557,18 @@ class FacturacionTab(QWidget):
             "json": new_json_path,
             "pdf": pdf_path,
             "tipo": entry.get("tipo") if isinstance(entry, dict) else None,
+            "venta_id": (
+                entry.get("venta_id")
+                if isinstance(entry, Mapping)
+                else (factura.get("venta_id") if isinstance(factura, Mapping) else None)
+            ),
+            "source_venta_id": (
+                entry.get("venta_id")
+                if isinstance(entry, Mapping)
+                else (factura.get("venta_id") if isinstance(factura, Mapping) else None)
+            ),
+            "source_payload": source_payload,
+            "preserve_pdf_fields": True,
         }
         if not pdf_entry["tipo"]:
             pdf_entry["tipo"] = TIPO_DTE_DESC.get(tipo_dte, "Factura")
@@ -8148,12 +8670,42 @@ class FacturacionTab(QWidget):
             return
         venta_id = entry.get("venta_id")
         if venta_id:
+            source_payload = None
+            if isinstance(raw_payload, Mapping):
+                source_payload = raw_payload
+            elif isinstance(data, Mapping):
+                source_payload = data
+
             parent = self.parent() or self.window()
             regen_fn = None
             if parent and hasattr(parent, "_generar_nueva_factura_electronica"):
                 regen_fn = getattr(parent, "_generar_nueva_factura_electronica")
             if callable(regen_fn):
                 regen_fn(int(venta_id))
+                # Rebuild only the PDF representation from the regenerated JSON,
+                # preserving metadata used by print layout (remisión/orden/lote/vencimiento).
+                try:
+                    pdf_path, _, regenerated_json_path = self._get_invoice_paths(
+                        int(venta_id),
+                        factura=None,
+                        entry=None,
+                    )
+                except Exception:
+                    pdf_path, regenerated_json_path = None, None
+
+                if regenerated_json_path and os.path.exists(regenerated_json_path):
+                    self._build_invoice_pdf_from_json(
+                        {
+                            "json": regenerated_json_path,
+                            "pdf": pdf_path,
+                            "tipo": entry.get("tipo"),
+                            "venta_id": int(venta_id),
+                            "source_venta_id": int(venta_id),
+                            "source_payload": source_payload,
+                            "preserve_pdf_fields": True,
+                        },
+                        base_pdf_path=pdf_path,
+                    )
             else:
                 QMessageBox.warning(
                     self,
@@ -8367,6 +8919,10 @@ class FacturacionTab(QWidget):
             "json": new_json_path,
             "pdf": pdf_path,
             "tipo": entry.get("tipo"),
+            "venta_id": entry.get("venta_id") if isinstance(entry, Mapping) else None,
+            "source_venta_id": entry.get("venta_id") if isinstance(entry, Mapping) else None,
+            "source_payload": data if isinstance(data, Mapping) else None,
+            "preserve_pdf_fields": True,
         }
         pdf_result = self._build_invoice_pdf_from_json(
             pdf_entry,
@@ -8725,6 +9281,10 @@ class FacturacionTab(QWidget):
         force_regenerate: bool = False,
         expected_codigo: str | None = None,
         expected_sello: str | None = None,
+        entry: Mapping[str, Any] | None = None,
+        factura: Mapping[str, Any] | None = None,
+        preferred_pdf_path: str | None = None,
+        preferred_json_path: str | None = None,
     ):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         if not venta:
@@ -8741,8 +9301,54 @@ class FacturacionTab(QWidget):
             return
 
         pdf_path = None
-        if force_regenerate:
-            pdf_path = self._generate_invoice_pdf(venta_id)
+        json_path = None
+
+        if preferred_pdf_path:
+            pdf_path = preferred_pdf_path
+        if preferred_json_path:
+            json_path = preferred_json_path
+
+        if isinstance(factura, Mapping):
+            if not pdf_path:
+                pdf_path = factura.get("pdf")
+            if not json_path:
+                json_path = factura.get("json")
+
+        if isinstance(entry, Mapping):
+            if not pdf_path:
+                pdf_path = entry.get("pdf")
+            if not json_path:
+                json_path = entry.get("json") or entry.get("path")
+
+        if venta_id and (not pdf_path or not json_path):
+            resolved_pdf, _ticket_pdf, resolved_json = self._get_invoice_paths(
+                venta_id,
+                factura=factura if isinstance(factura, Mapping) else None,
+                entry=entry if isinstance(entry, Mapping) else None,
+            )
+            if not pdf_path:
+                pdf_path = resolved_pdf
+            if not json_path:
+                json_path = resolved_json
+
+        if preferred_json_path:
+            preferred_pair_pdf = os.path.splitext(preferred_json_path)[0] + ".pdf"
+            if os.path.exists(preferred_pair_pdf):
+                pdf_path = preferred_pair_pdf
+                if not json_path:
+                    json_path = preferred_json_path
+
+        if (not pdf_path or not os.path.exists(pdf_path)) and json_path:
+            candidate_pdf = os.path.splitext(json_path)[0] + ".pdf"
+            if os.path.exists(candidate_pdf):
+                pdf_path = candidate_pdf
+
+        if force_regenerate and (not pdf_path or not os.path.exists(pdf_path)):
+            regenerated_pdf = self._generate_invoice_pdf(venta_id)
+            if regenerated_pdf:
+                pdf_path = regenerated_pdf
+                json_path = os.path.splitext(regenerated_pdf)[0] + ".json"
+
         if not pdf_path:
             pdf_path = self.manager.db.get_factura_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
@@ -8750,7 +9356,9 @@ class FacturacionTab(QWidget):
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el PDF.")
             return
-        json_path = os.path.splitext(pdf_path)[0] + ".json"
+
+        if not json_path:
+            json_path = os.path.splitext(pdf_path)[0] + ".json"
         if not os.path.exists(json_path):
             pdf_path = self._generate_invoice_pdf(venta_id)
             json_path = os.path.splitext(pdf_path)[0] + ".json"
@@ -8788,6 +9396,7 @@ class FacturacionTab(QWidget):
 
         expected_codigo_norm = (codigo_meta or "").strip().upper()
         expected_sello_norm = (sello_meta or "").strip()
+        keep_selected_artifacts = bool(preferred_pdf_path and preferred_json_path)
         attempts = 0
         while True:
             try:
@@ -8811,7 +9420,7 @@ class FacturacionTab(QWidget):
             sello_json = str(sello_json).strip()
 
             if expected_codigo_norm and codigo_json != expected_codigo_norm:
-                if attempts == 0:
+                if attempts == 0 and not keep_selected_artifacts:
                     pdf_path = self._generate_invoice_pdf(venta_id)
                     if not pdf_path or not os.path.exists(pdf_path):
                         QMessageBox.warning(
@@ -8828,6 +9437,19 @@ class FacturacionTab(QWidget):
                             "No se encontró el JSON firmado después de regenerar la factura.",
                         )
                         return
+                    if expected_codigo_norm or expected_sello_norm:
+                        new_code, new_sello = self._ensure_invoice_json_metadata(
+                            json_path,
+                            codigo=expected_codigo_norm or None,
+                            sello=expected_sello_norm or None,
+                        )
+                        if new_code:
+                            expected_codigo_norm = str(new_code).strip().upper()
+                        if new_sello:
+                            expected_sello_norm = str(new_sello).strip()
+                    attempts += 1
+                    continue
+                if attempts == 0 and keep_selected_artifacts:
                     if expected_codigo_norm or expected_sello_norm:
                         new_code, new_sello = self._ensure_invoice_json_metadata(
                             json_path,
@@ -8857,7 +9479,7 @@ class FacturacionTab(QWidget):
                 return
 
             if expected_sello_norm and sello_json.upper() != expected_sello_norm.upper():
-                if attempts == 0:
+                if attempts == 0 and not keep_selected_artifacts:
                     pdf_path = self._generate_invoice_pdf(venta_id)
                     if not pdf_path or not os.path.exists(pdf_path):
                         QMessageBox.warning(
@@ -8874,6 +9496,19 @@ class FacturacionTab(QWidget):
                             "No se encontró el JSON firmado después de regenerar la factura.",
                         )
                         return
+                    if expected_codigo_norm or expected_sello_norm:
+                        new_code, new_sello = self._ensure_invoice_json_metadata(
+                            json_path,
+                            codigo=expected_codigo_norm or None,
+                            sello=expected_sello_norm or None,
+                        )
+                        if new_code:
+                            expected_codigo_norm = str(new_code).strip().upper()
+                        if new_sello:
+                            expected_sello_norm = str(new_sello).strip()
+                    attempts += 1
+                    continue
+                if attempts == 0 and keep_selected_artifacts:
                     if expected_codigo_norm or expected_sello_norm:
                         new_code, new_sello = self._ensure_invoice_json_metadata(
                             json_path,
@@ -10508,29 +11143,32 @@ class FacturacionTab(QWidget):
         ticket_path = None
         dte_json_path = None
 
+        row_type = entry.get("row_type") if entry else None
+        if entry:
+            pdf_path = entry.get("pdf") or None
+            ticket_path = entry.get("ticket_pdf") or entry.get("ticket_path") or None
+            dte_json_path = entry.get("json") or entry.get("path") or None
+
         venta = None
-        if venta_id:
-            try:
-                pdf_path = self.manager.db.get_factura_pdf(venta_id)
-            except Exception:
-                pdf_path = None
-            try:
-                ticket_path = self.manager.db.get_ticket_pdf(venta_id)
-            except Exception:
-                ticket_path = None
+        allow_db_fallback = row_type not in {"orphan", "retencion"}
+        if venta_id and allow_db_fallback:
+            if not pdf_path:
+                try:
+                    pdf_path = self.manager.db.get_factura_pdf(venta_id)
+                except Exception:
+                    pdf_path = None
+            if not ticket_path:
+                try:
+                    ticket_path = self.manager.db.get_ticket_pdf(venta_id)
+                except Exception:
+                    ticket_path = None
             try:
                 venta = self.manager.db.get_venta_by_id(venta_id)
             except Exception:
                 venta = None
 
-        if entry and not ticket_path:
-            ticket_path = entry.get("ticket_pdf") or entry.get("ticket_path")
-
         if factura:
             dte_json_path = factura.get("json")
-
-        if not dte_json_path and entry:
-            dte_json_path = entry.get("json") or entry.get("path")
 
         if not dte_json_path and pdf_path:
             dte_json_path = os.path.splitext(pdf_path)[0] + ".json"

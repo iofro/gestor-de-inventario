@@ -409,7 +409,7 @@ def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
         (venta_id,),
     ).lastrowid
 
-    fecha_envio_iso = "2024-03-18"
+    fecha_envio_iso = "2024-03-19"
     db.registrar_envio_dte(
         venta_id,
         "auto",
@@ -420,7 +420,7 @@ def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
 
     nce = generar_nce_desde_nota(db, nota_id, strict_snapshot=False)
     doc_rel = nce["documentoRelacionado"][0]
-    assert doc_rel["fechaEmision"] == fecha_envio_iso
+    assert doc_rel["fechaEmision"] == "2024-03-18"
     today_str = fecha_emision_hoy_str()
     assert nce["identificacion"]["fecEmi"] == today_str
 

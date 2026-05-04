@@ -595,7 +595,44 @@ def _resolve_json_path(
     candidates.extend(_candidate_paths(venta_extra))
     if venta:
         candidates.extend(_candidate_paths(venta))
+
+    def _is_note_tipo(tipo_val: Any) -> bool:
+        text = str(tipo_val or "").strip().lower()
+        return "nota" in text
+
     if venta_id is not None:
+        # Priorizamos JSON de factura base (CF/CCF) sobre notas asociadas a la
+        # misma venta para evitar mezclar la fuente de una NC/ND previa.
+        try:
+            rows = db.cursor.execute(
+                "SELECT ruta, tipo FROM facturas_pdf WHERE venta_id=? ORDER BY fecha_creacion DESC, id DESC",
+                (venta_id,),
+            ).fetchall()
+        except Exception:  # pragma: no cover - acceso a BD best effort
+            rows = []
+
+        base_rows: list[Any] = []
+        note_rows: list[Any] = []
+        for row in rows:
+            try:
+                tipo_val = row["tipo"]
+                ruta_val = row["ruta"]
+            except Exception:
+                try:
+                    ruta_val = row[0]
+                    tipo_val = row[1] if len(row) > 1 else ""
+                except Exception:
+                    continue
+            if not ruta_val:
+                continue
+            if _is_note_tipo(tipo_val):
+                note_rows.append((ruta_val, tipo_val))
+            else:
+                base_rows.append((ruta_val, tipo_val))
+
+        for ruta_val, _tipo_val in base_rows + note_rows:
+            candidates.append(os.path.splitext(os.fspath(ruta_val))[0] + ".json")
+
         try:
             pdf_path = db.get_factura_pdf(venta_id)
         except Exception:  # pragma: no cover - acceso a BD best effort

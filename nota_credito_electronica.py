@@ -467,29 +467,83 @@ def generar_nce_desde_nota(
 
     fecha_origen = None
     fecha_origen_source = None
-    if origen_info.snapshot and origen_info.snapshot.fecha_emision:
-        fecha_origen = fecha_ddmmaaaa(origen_info.snapshot.fecha_emision)
-        if fecha_origen:
-            fecha_origen_source = "snapshot"
+
+    # Para MH la fecha del documento relacionado debe reflejar la fecha de
+    # emisión histórica del DTE base. Priorizamos fuentes persistidas (JSON/
+    # snapshot) por encima de fechas derivadas de re-generación.
+    fecha_venta = fecha_ddmmaaaa(venta.get("fecha")) if venta else None
+    ident_fecha = (
+        origen_ident_tmp.get("fechaEmision")
+        or origen_ident_tmp.get("fecEmi")
+    )
+    ident_fecha_norm = fecha_ddmmaaaa(ident_fecha) if ident_fecha else None
+
+    def _days_between(first: str | None, second: str | None) -> int | None:
+        if not first or not second:
+            return None
+        first_iso = fecha_iso(first)
+        second_iso = fecha_iso(second)
+        if not first_iso or not second_iso:
+            return None
+        try:
+            first_dt = datetime.fromisoformat(first_iso)
+            second_dt = datetime.fromisoformat(second_iso)
+        except ValueError:
+            return None
+        return abs((first_dt.date() - second_dt.date()).days)
+
+    use_config_ident = source_used != "config"
+    if source_used == "config" and ident_fecha_norm:
+        # Si el DTE se reconstruyó por configuración, solo confiamos en su
+        # fecha cuando es consistente con la venta original.
+        delta_venta = _days_between(ident_fecha_norm, fecha_venta)
+        if delta_venta is not None and delta_venta <= 7:
+            use_config_ident = True
+
+    json_ident = {}
+    if isinstance(origen_info.json_payload, Mapping):
+        raw_ident = origen_info.json_payload.get("identificacion")
+        if isinstance(raw_ident, Mapping):
+            json_ident = raw_ident
+    ident_fecha_json = json_ident.get("fechaEmision") or json_ident.get("fecEmi")
+    if ident_fecha_json:
+        fecha_tmp = fecha_ddmmaaaa(ident_fecha_json)
+        if fecha_tmp:
+            fecha_origen = fecha_tmp
+            fecha_origen_source = "json"
+
+    if not fecha_origen and origen_info.snapshot and origen_info.snapshot.fecha_emision:
+        snapshot_tipo = str(origen_info.snapshot.tipo_documento or "").strip()
+        if snapshot_tipo.isdigit() and len(snapshot_tipo) <= 2:
+            snapshot_tipo = f"{int(snapshot_tipo):02d}"
+        target_tipo = str(tipo_doc or "").strip()
+        if target_tipo.isdigit() and len(target_tipo) <= 2:
+            target_tipo = f"{int(target_tipo):02d}"
+        # Si la snapshot no coincide con el tipo base (01/03), se ignora.
+        if not target_tipo or not snapshot_tipo or snapshot_tipo == target_tipo:
+            fecha_tmp = fecha_ddmmaaaa(origen_info.snapshot.fecha_emision)
+            if fecha_tmp:
+                fecha_origen = fecha_tmp
+                fecha_origen_source = "snapshot"
+
+    if not fecha_origen and ident_fecha_norm and use_config_ident:
+        fecha_origen = ident_fecha_norm
+        fecha_origen_source = "identificacion"
+
+    if not fecha_origen and fecha_venta:
+        fecha_origen = fecha_venta
+        fecha_origen_source = "venta"
+
     if not fecha_origen and venta_id is not None:
+        # Último recurso: fecha de procesamiento reportada por MH.
         fecha_envio = db.get_envio_fecha_emision(venta_id)
         if fecha_envio:
             fecha_origen = fecha_envio
             fecha_origen_source = "envio"
-    if not fecha_origen and venta:
-        fecha_origen = fecha_ddmmaaaa(venta.get("fecha"))
-        if fecha_origen:
-            fecha_origen_source = "venta"
-    if not fecha_origen:
-        ident_fecha = (
-            origen_ident_tmp.get("fechaEmision")
-            or origen_ident_tmp.get("fecEmi")
-        )
-        if ident_fecha:
-            fecha_tmp = fecha_ddmmaaaa(ident_fecha)
-            if fecha_tmp:
-                fecha_origen = fecha_tmp
-                fecha_origen_source = "identificacion"
+
+    if not fecha_origen and ident_fecha_norm:
+        fecha_origen = ident_fecha_norm
+        fecha_origen_source = "identificacion_fallback"
     logger.info(
         "fecha relacionada para nota %s = %s (origen: %s)",
         nota_id,

@@ -6066,6 +6066,7 @@ class DistribuidorInfoDialog(QDialog):
 class ClienteDialog(QDialog):
     def __init__(self, parent=None, cliente=None, codigo_sugerido=None, read_only: bool = False):
         super().__init__(parent)
+        self._telefono_guion_detectado = False
         self._read_only = bool(read_only)
         if self._read_only:
             self.setWindowTitle("Ver datos del cliente")
@@ -6090,6 +6091,7 @@ class ClienteDialog(QDialog):
         self.giro_edit = QLineEdit()
         self.codActividad_edit = QLineEdit()
         self.telefono_edit = QLineEdit()
+        self.telefono_edit.textEdited.connect(self._on_telefono_text_edited)
         self.email_edit = QLineEdit()
         self.direccion_edit = QLineEdit()
         self.departamento_edit = QComboBox()
@@ -6233,6 +6235,11 @@ class ClienteDialog(QDialog):
             QMessageBox.warning(self, "Validación", "Ingrese un DUI válido.")
             return
         telefono = self.telefono_edit.text().strip()
+        if "-" in telefono:
+            self._telefono_guion_detectado = True
+        if self._telefono_guion_detectado and telefono:
+            if not self._confirmar_telefono_con_guion():
+                return
         if telefono and not validar_telefono(telefono):
             QMessageBox.warning(self, "Validación", "Ingrese un teléfono válido.")
             return
@@ -6256,6 +6263,40 @@ class ClienteDialog(QDialog):
                 QMessageBox.warning(self, "Validación", "El NIT ya está registrado.")
                 return
         self.accept()
+
+    def _on_telefono_text_edited(self, text: str) -> None:
+        """Evita guiones en teléfono y deja rastro para advertencia al guardar."""
+        if "-" not in text:
+            return
+        self._telefono_guion_detectado = True
+        cursor_pos = self.telefono_edit.cursorPosition()
+        removed_before_cursor = text[:cursor_pos].count("-")
+        cleaned = text.replace("-", "")
+        self.telefono_edit.blockSignals(True)
+        self.telefono_edit.setText(cleaned)
+        self.telefono_edit.blockSignals(False)
+        new_cursor = max(0, cursor_pos - removed_before_cursor)
+        self.telefono_edit.setCursorPosition(min(new_cursor, len(cleaned)))
+
+    def _confirmar_telefono_con_guion(self) -> bool:
+        """Muestra doble confirmación cuando se detecta uso de guión en teléfono."""
+        first = QMessageBox.question(
+            self,
+            "Teléfono con guion",
+            "Puso un guion en el numero de telefono esto va a causar conflictos, desea continuar?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if first != QMessageBox.Yes:
+            return False
+        second = QMessageBox.question(
+            self,
+            "Teléfono con guion",
+            "Esto va a causar conflictos, desea continuar?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return second == QMessageBox.Yes
 
     def get_data(self):
         return {
